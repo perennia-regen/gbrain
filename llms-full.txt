@@ -2410,6 +2410,128 @@ worker drains.
 
 ---
 
+## Multi-player and company brains
+
+Three ways to share a brain across multiple agents, machines, or teammates.
+Most setups want pattern 1 (single server, multiple MCP clients). The other
+two patterns exist for specific reasons.
+
+### Pattern 1 — One GBrain server, many MCP clients (recommended)
+
+The GBrain server runs on the same machine or container as your primary
+agent (OpenClaw, Hermes, AlphaClaw). It publishes an MCP endpoint over
+HTTP with OAuth 2.1. Other agents — on other machines, in other apps,
+across teammates' laptops — connect as thin MCP clients.
+
+```bash
+# On the box that hosts your brain + primary agent:
+gbrain serve --http --bind 0.0.0.0 --public-url https://brain.example.com
+# Prints a one-time admin bootstrap token; paste it into the admin UI
+# at /admin to register OAuth clients.
+
+# On any other machine, set up a thin client:
+gbrain init --mcp-only
+# Walks you through pointing at the server URL + OAuth credentials.
+# No local database, no scaffolded skills — just a routing shim.
+```
+
+**Network: use Tailscale.** Run the server on a Tailscale-private address
+so the brain is reachable from your other machines without exposing
+anything to the public internet. Public-internet exposure works fine
+(OAuth + loopback-bind-by-default + admin dashboard handle it), it's just
+a larger blast radius. For teams, Tailscale + OAuth is the cheap path to
+"my engineering team's agents all read from one shared brain."
+
+**What thin clients CAN do** (subject to OAuth scope: `read` / `write` / `admin`):
+
+- `search`, `query`, `think` — full retrieval pipeline, including the
+  knowledge graph + reranking
+- `get_page`, `list_pages`, `put_page`, `delete_page`, `restore_page` —
+  page CRUD (`put_page`/`delete_page` require `write` scope)
+- `find_experts` (whoknows), `find_trajectory`, `find_orphans`,
+  `find_anomalies`, `find_contradictions` — the analytical surfaces
+- `get_recent_salience`, `get_brain_identity` — observability
+- `apply-migrations`, `restore_page` — admin scope, OAuth-gated
+- Anything else marked `localOnly: false` in `src/core/operations.ts`
+
+**What thin clients CANNOT do** (server-side only, by design):
+
+- `sync_brain` — needs filesystem access to the git brain repo
+- `file_upload`, `file_list`, `file_url` — server-side S3 / Supabase
+  Storage credentials don't cross the trust boundary
+- `get_recent_transcripts` — raw `.txt` transcripts; privacy gate keeps
+  these local
+- `purge_deleted_pages` — destructive, admin-only, local-only
+- `code_traversal_cache_clear` — local maintenance
+
+If a thin client tries one of these, the server returns a clear
+"local-only" error pointing at the local CLI.
+
+**Source-scoped clients (v0.34+).** A teammate's OAuth client can be tied
+to a single source with `--source dept-x`; its writes are isolated to
+that source's RLS-protected rows. `--federated-read S1,S2,S3` adds
+orthogonal read scopes so the client can read across departments while
+writing to one canon. Useful when a team has a shared brain AND
+contributes back to a CEO-class brain.
+
+### Pattern 2 — Local PGLite for code search (GStack)
+
+For an engineering agent that wants symbol-aware code search on the
+repo it's currently working in, run a local PGLite instance instead of
+hitting a central GBrain server. [GStack](https://github.com/garrytan/gstack)
+supports this directly: one PGLite per worktree, indexed against that
+worktree's source tree.
+
+```bash
+# In the worktree you want to index:
+gbrain init --pglite              # ~2 seconds, no server, no creds
+gbrain import .                    # indexes the worktree's code
+echo "$(pwd)" > .gbrain-source     # pins this PGLite to this worktree
+```
+
+`/sync-gbrain` (a GStack skill) keeps the PGLite current as you work.
+Code-aware queries (`gbrain code-def`, `gbrain code-refs`,
+`gbrain code-callers`) walk tree-sitter call-graph edges across 29
+languages. Symbol-aware retrieval works better than `grep` for "where
+is X defined" / "what calls Y" queries.
+
+Don't use this pattern for shared knowledge. PGLite is single-process,
+worktree-scoped, no concurrent writers. The right tool for "my agent
+needs the brain my team uses" is pattern 1.
+
+### Pattern 3 — Federated repos (advanced)
+
+Multiple GBrain servers, each indexing the same brain repo from its
+own git clone. Each server has its own DB; they sync to the same
+markdown source of truth via `gbrain sync`.
+
+Use this when:
+- You want a personal brain AND a team brain that share some content
+  (the team's knowledge wiki) but diverge on private notes.
+- You're crossing a hard trust boundary (your personal brain is
+  read-write to you; the team brain is read-only to most teammates,
+  write-gated to a few).
+- The shared content is genuinely repo-shaped (markdown files in git),
+  not "we both query each other's brains via MCP."
+
+The mechanics: clone the same brain repo on each server, run
+`gbrain init` against each, configure both to sync from the same git
+remote. Pages land in both databases; the knowledge graph wires
+independently on each side from the same source markdown.
+
+**Most teams should NOT pick this.** The MCP-client path (pattern 1)
+gives you one source of truth, one set of skills, one knowledge graph,
+and OAuth-gated multi-user access. Federated repos make sense when the
+shared content is the source of truth (a published team wiki) and the
+agents are operating against their own private overlays.
+
+My personal setup runs both: a personal brain on my laptop and a team
+brain on a separate box, indexing two different git repos. The team
+brain is what teammates' thin MCP clients connect to; the personal
+brain stays local.
+
+---
+
 ## Skills
 
 35 curated skills ship in the bundle. The agent installs them via
