@@ -6,7 +6,7 @@
  * each individual dimension failing in isolation, tier eligibility math,
  * auto-fix scaffold, and audit log append.
  */
-import { describe, test, expect, beforeAll, afterAll, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -23,6 +23,7 @@ import {
   logSkillpackEvent,
   readRecentSkillpackEvents,
 } from '../src/core/skillpack/audit.ts';
+import { withEnv } from './helpers/with-env.ts';
 
 let tmp: string;
 beforeAll(() => {
@@ -330,35 +331,38 @@ describe('describeRubric — pure-data export', () => {
 });
 
 describe('audit — JSONL log', () => {
-  let auditDir: string;
-  beforeEach(() => {
-    auditDir = mkdtempSync(join(tmp, 'audit-'));
-    process.env.GBRAIN_AUDIT_DIR = auditDir;
+  test('logSkillpackEvent appends a line', async () => {
+    const auditDir = mkdtempSync(join(tmp, 'audit-1-'));
+    await withEnv({ GBRAIN_AUDIT_DIR: auditDir }, () => {
+      logSkillpackEvent({ event: 'scaffold_third_party', pack: 'foo', outcome: 'ok' });
+      const file = currentAuditFilePath();
+      expect(existsSync(file)).toBe(true);
+      const content = readFileSync(file, 'utf-8');
+      expect(content).toContain('"scaffold_third_party"');
+      expect(content).toContain('"pack":"foo"');
+    });
   });
 
-  test('logSkillpackEvent appends a line', () => {
-    logSkillpackEvent({ event: 'scaffold_third_party', pack: 'foo', outcome: 'ok' });
-    const file = currentAuditFilePath();
-    expect(existsSync(file)).toBe(true);
-    const content = readFileSync(file, 'utf-8');
-    expect(content).toContain('"scaffold_third_party"');
-    expect(content).toContain('"pack":"foo"');
+  test('readRecentSkillpackEvents returns chronological events', async () => {
+    const auditDir = mkdtempSync(join(tmp, 'audit-2-'));
+    await withEnv({ GBRAIN_AUDIT_DIR: auditDir }, () => {
+      logSkillpackEvent({ event: 'search', pack: 'foo', outcome: 'ok' });
+      logSkillpackEvent({ event: 'doctor_run', pack: 'foo', outcome: 'ok' });
+      const events = readRecentSkillpackEvents(7);
+      expect(events.length).toBe(2);
+      expect(events[0]?.event).toBe('search');
+      expect(events[1]?.event).toBe('doctor_run');
+    });
   });
 
-  test('readRecentSkillpackEvents returns chronological events', () => {
-    logSkillpackEvent({ event: 'search', pack: 'foo', outcome: 'ok' });
-    logSkillpackEvent({ event: 'doctor_run', pack: 'foo', outcome: 'ok' });
-    const events = readRecentSkillpackEvents(7);
-    expect(events.length).toBe(2);
-    expect(events[0]?.event).toBe('search');
-    expect(events[1]?.event).toBe('doctor_run');
-  });
-
-  test('readRecentSkillpackEvents skips malformed lines without throwing', () => {
-    const file = currentAuditFilePath();
-    mkdirSync(auditDir, { recursive: true });
-    writeFileSync(file, '{not json}\n{"ts":"2026-01-01","event":"search","outcome":"ok"}\n');
-    const events = readRecentSkillpackEvents(365 * 5);
-    expect(events.length).toBe(1);
+  test('readRecentSkillpackEvents skips malformed lines without throwing', async () => {
+    const auditDir = mkdtempSync(join(tmp, 'audit-3-'));
+    await withEnv({ GBRAIN_AUDIT_DIR: auditDir }, () => {
+      const file = currentAuditFilePath();
+      mkdirSync(auditDir, { recursive: true });
+      writeFileSync(file, '{not json}\n{"ts":"2026-01-01","event":"search","outcome":"ok"}\n');
+      const events = readRecentSkillpackEvents(365 * 5);
+      expect(events.length).toBe(1);
+    });
   });
 });
