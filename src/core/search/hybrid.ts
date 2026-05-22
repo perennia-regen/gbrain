@@ -241,8 +241,32 @@ export interface PostFusionOpts {
    * (`applyExactMatchBoost`) runs AFTER `runPostFusionStages` and is NOT
    * gated — it's a lexical-relevance signal, different in kind from
    * metadata boosts.
+   *
+   * v0.40.4: scope extended to the new graph_signals stage. Graph
+   * signals are a metadata-axis boost like backlink/salience/recency
+   * — same floor-gate inheritance prevents the weak-page-becomes-hub
+   * regression (codex T2 / D1=A in v0.40.4 plan).
    */
   floorRatio?: number;
+  /**
+   * v0.40.4 — gate for the graph-signals stage (4th post-fusion stage).
+   * False short-circuits to no-op. When true, applyGraphSignals fires
+   * AFTER backlink/salience/recency so it stacks on top of metadata
+   * boosts. Resolved from ModeBundle.graph_signals by the caller.
+   */
+  graphSignalsEnabled?: boolean;
+  /**
+   * v0.40.4 — observability sink for graph-signal fire counts. Threaded
+   * through hybridSearch.onMeta so eval-capture sees per-query metrics.
+   */
+  onGraphMeta?: (meta: import('./graph-signals.ts').GraphSignalsMeta) => void;
+  /**
+   * v0.40.4 — observability sink for score-distribution stats (top-K
+   * min/p25/p50/p75/p95/max + reorder_band_width). Always emitted when
+   * graphSignalsEnabled is true. Feeds T-todo-2 magnitude calibration
+   * wave via search-stats.
+   */
+  onScoreDistribution?: (dist: import('./graph-signals.ts').ScoreDistribution) => void;
 }
 
 export async function runPostFusionStages(
@@ -303,6 +327,25 @@ export async function runPostFusionStages(
       );
     } catch {
       // Non-fatal.
+    }
+  }
+
+  // v0.40.4 — graph-signals stage (4th post-fusion stage). Runs AFTER
+  // backlink/salience/recency so it stacks on top of metadata boosts;
+  // shares the same floor-threshold so a weak hub gets the same
+  // protection v0.35.6.0 added for other metadata boosts. Fail-open at
+  // this level matches the per-stage non-fatal contract.
+  if (opts.graphSignalsEnabled) {
+    try {
+      const { applyGraphSignals } = await import('./graph-signals.ts');
+      await applyGraphSignals(results, engine, {
+        enabled: true,
+        floorThreshold,
+        onMeta: opts.onGraphMeta,
+        onScoreDistribution: opts.onScoreDistribution,
+      });
+    } catch {
+      // Non-fatal; preserves the per-stage contract.
     }
   }
 }
