@@ -162,6 +162,20 @@ export interface ModeBundle {
    * Fires for <1% of queries when on; ~$0.0001 per escalation.
    */
   cross_modal_llm_intent: boolean;
+  /**
+   * v0.40.4 — gate for the graph-signals stage (4th post-fusion stage).
+   * Default: off for conservative, on for balanced + tokenmax. When on,
+   * applyGraphSignals fires inside runPostFusionStages with three sub-
+   * signals (adjacency hub, cross-source hub, session diversification).
+   *
+   * Magnitudes (graph-signals.ts constants): 1.05 / 1.10 / 0.95.
+   * Conservative-by-construction (D14=B); calibration wave T-todo-2
+   * tunes them against real production data after 30 days.
+   *
+   * Override path: per-call SearchOpts → `search.graph_signals` config
+   * key → mode bundle default.
+   */
+  graph_signals: boolean;
 }
 
 /**
@@ -198,6 +212,10 @@ export const MODE_BUNDLES: Readonly<Record<SearchMode, Readonly<ModeBundle>>> = 
     unified_multimodal: false,
     unified_multimodal_only: false,
     cross_modal_llm_intent: false,
+    // v0.40.4 — graph signals OFF for conservative (cost-sensitive tier,
+    // matches the "minimize per-query overhead" posture). Signal still
+    // useful for power users via per-call SearchOpts.graph_signals = true.
+    graph_signals: false,
   }),
   balanced: Object.freeze({
     cache_enabled: true,
@@ -231,6 +249,13 @@ export const MODE_BUNDLES: Readonly<Record<SearchMode, Readonly<ModeBundle>>> = 
     unified_multimodal: false,
     unified_multimodal_only: false,
     cross_modal_llm_intent: false,
+    // v0.40.4 — graph signals ON for balanced. Adjacency + cross-source
+    // signals exploit the link graph the brain already has; session
+    // diversification stops same-session weak chunks from competing
+    // with strong hits for token budget. Conservative magnitudes
+    // (1.05/1.10/0.95) with floor-gate inheritance keep regression risk
+    // bounded. Opt out with `gbrain config set search.graph_signals false`.
+    graph_signals: true,
   }),
   tokenmax: Object.freeze({
     cache_enabled: true,
@@ -261,6 +286,10 @@ export const MODE_BUNDLES: Readonly<Record<SearchMode, Readonly<ModeBundle>>> = 
     unified_multimodal: false,
     unified_multimodal_only: false,
     cross_modal_llm_intent: false,
+    // v0.40.4 — graph signals ON for tokenmax (power-user tier). Same
+    // rationale as balanced. The score-distribution probe collects data
+    // for T-todo-2 magnitude calibration wave.
+    graph_signals: true,
   }),
 });
 
@@ -302,6 +331,8 @@ export interface SearchKeyOverrides {
   unified_multimodal?: boolean;
   unified_multimodal_only?: boolean;
   cross_modal_llm_intent?: boolean;
+  // v0.40.4 — graph_signals override (boolean).
+  graph_signals?: boolean;
 }
 
 /**
@@ -335,6 +366,8 @@ export interface SearchPerCallOpts {
   unified_multimodal?: boolean;
   unified_multimodal_only?: boolean;
   cross_modal_llm_intent?: boolean;
+  // v0.40.4 — graph_signals per-call override (boolean).
+  graph_signals?: boolean;
 }
 
 /**
@@ -403,6 +436,8 @@ export function resolveSearchMode(input: ResolveSearchModeInput): ResolvedSearch
     unified_multimodal: pick('unified_multimodal'),
     unified_multimodal_only: pick('unified_multimodal_only'),
     cross_modal_llm_intent: pick('cross_modal_llm_intent'),
+    // v0.40.4
+    graph_signals: pick('graph_signals'),
     resolved_mode,
     mode_valid: valid,
   };
@@ -471,7 +506,13 @@ export function attributeKnob<K extends keyof ModeBundle>(
 // image-mode caller). v0.35.6.0's floor_ratio bump and v0.36's cross-modal
 // extensions both land under v=3, with cross-modal fields appended after
 // the floor_ratio entry (CDX2-F13 append-only convention).
-export const KNOBS_HASH_VERSION = 3;
+//
+// v0.40.4 bump 3→4: graph_signals participates in the cache key. A
+// graph-on write must NOT be served to a graph-off lookup (ranking
+// shifts when adjacency / cross-source / session-demote stamps move
+// results). Mid-deploy hit-rate dip is expected — clears within
+// cache.ttl_seconds (3600s default).
+export const KNOBS_HASH_VERSION = 4;
 
 /**
  * v0.36 (D8 / CDX-2) — second-arg context for the cache key. The
@@ -538,6 +579,9 @@ export function knobsHash(
     // must never be served from a row that ran against `embedding`.
     `col=${ctx?.embeddingColumn ?? 'embedding'}`,
     `prov=${ctx?.embeddingModel ?? 'default'}`,
+    // v=4 additions (append-only). graph_signals participates so a
+    // graph-on write cannot be served to a graph-off lookup.
+    `gs=${knobs.graph_signals ? 1 : 0}`,
   ];
   const h = createHash('sha256');
   h.update(parts.join('|'));
@@ -669,6 +713,12 @@ export function loadOverridesFromConfig(
     out.cross_modal_llm_intent = lli === '1' || lli.toLowerCase() === 'true';
   }
 
+  // v0.40.4 — graph_signals
+  const gs = get('search.graph_signals');
+  if (gs !== undefined) {
+    out.graph_signals = gs === '1' || gs.toLowerCase() === 'true';
+  }
+
   return out;
 }
 
@@ -697,6 +747,8 @@ export const SEARCH_MODE_CONFIG_KEYS: ReadonlyArray<string> = Object.freeze([
   'search.unified_multimodal',
   'search.unified_multimodal_only',
   'search.cross_modal.llm_intent',
+  // v0.40.4 graph signals
+  'search.graph_signals',
 ]);
 
 /**

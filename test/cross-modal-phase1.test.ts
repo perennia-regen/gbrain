@@ -136,8 +136,8 @@ describe('D2 — knobsHash differs across cross-modal knob values', () => {
     return resolveSearchMode({ mode: 'balanced' });
   }
 
-  test('KNOBS_HASH_VERSION is 3 (v0.36 cross-modal bump)', () => {
-    expect(KNOBS_HASH_VERSION).toBe(3);
+  test('KNOBS_HASH_VERSION is 4 (3→4 v0.40.4 graph_signals; cross-modal still appended)', () => {
+    expect(KNOBS_HASH_VERSION).toBe(4);
   });
 
   test('flipping unified_multimodal changes the hash', () => {

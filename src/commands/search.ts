@@ -62,6 +62,8 @@ const KNOB_DESCRIPTIONS: Record<keyof ModeBundle, string> = {
   unified_multimodal: 'Phase 3 — route all queries through embedding_multimodal column',
   unified_multimodal_only: 'Phase 3 strict — bypass dual-column fallback when unified is on',
   cross_modal_llm_intent: 'Commit 4 — Haiku tie-break for ambiguous modality classification',
+  // v0.40.4 graph signals
+  graph_signals: 'Selective graph signals: adjacency hub + cross-source hub + session diversification',
 };
 
 interface SearchModesReport {

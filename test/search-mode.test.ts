@@ -65,6 +65,7 @@ describe('SEARCH_MODES + MODE_BUNDLES canonical shape', () => {
       reranker_timeout_ms: 5000,
       floor_ratio: undefined,
       ...CROSS_MODAL_DEFAULTS,
+      graph_signals: false,
     });
   });
 
@@ -86,6 +87,7 @@ describe('SEARCH_MODES + MODE_BUNDLES canonical shape', () => {
       reranker_timeout_ms: 5000,
       floor_ratio: undefined,
       ...CROSS_MODAL_DEFAULTS,
+      graph_signals: true,
     });
   });
 
@@ -105,6 +107,7 @@ describe('SEARCH_MODES + MODE_BUNDLES canonical shape', () => {
       reranker_timeout_ms: 5000,
       floor_ratio: undefined,
       ...CROSS_MODAL_DEFAULTS,
+      graph_signals: true,
     });
   });
 
@@ -291,7 +294,9 @@ describe('knobsHash determinism + cross-mode separation (CDX-4)', () => {
     // all appended per CDX2-F13 append-only convention so a text-mode cache
     // hit can never silently serve to an image-mode caller, and a query
     // against `embedding_voyage` never shares a cache row with `embedding`.
-    expect(KNOBS_HASH_VERSION).toBe(3);
+    // v0.40.4 bumped 3→4 to fold graph_signals so a graph-on cache write
+    // cannot be served to a graph-off lookup.
+    expect(KNOBS_HASH_VERSION).toBe(4);
   });
 
   test('T1 (codex): floor_ratio set vs unset produces DIFFERENT hashes (cache contamination prevention)', () => {
@@ -395,5 +400,62 @@ describe('Type-only smoke test (compiler sees SearchMode union)', () => {
   test('SearchMode union is exactly 3 modes (compile-time)', () => {
     const valid: SearchMode[] = ['conservative', 'balanced', 'tokenmax'];
     expect(valid.length).toBe(3);
+  });
+});
+
+describe('v0.40.4 — graph_signals knob', () => {
+  test('default per mode: conservative=false, balanced=true, tokenmax=true', () => {
+    expect(MODE_BUNDLES.conservative.graph_signals).toBe(false);
+    expect(MODE_BUNDLES.balanced.graph_signals).toBe(true);
+    expect(MODE_BUNDLES.tokenmax.graph_signals).toBe(true);
+  });
+
+  test('config key search.graph_signals overrides bundle (true → false)', () => {
+    const ov = loadOverridesFromConfig({ 'search.graph_signals': 'false' });
+    expect(ov.graph_signals).toBe(false);
+    const resolved = resolveSearchMode({ mode: 'balanced', overrides: ov });
+    expect(resolved.graph_signals).toBe(false);
+  });
+
+  test('config key search.graph_signals overrides bundle (false → true)', () => {
+    const ov = loadOverridesFromConfig({ 'search.graph_signals': '1' });
+    expect(ov.graph_signals).toBe(true);
+    const resolved = resolveSearchMode({ mode: 'conservative', overrides: ov });
+    expect(resolved.graph_signals).toBe(true);
+  });
+
+  test('per-call overrides config + mode bundle', () => {
+    const resolved = resolveSearchMode({
+      mode: 'balanced',
+      overrides: { graph_signals: false },
+      perCall: { graph_signals: true },
+    });
+    expect(resolved.graph_signals).toBe(true);
+  });
+
+  test('knobsHash distinct for graph_signals=true vs =false', () => {
+    const on = knobsHash(resolveSearchMode({ mode: 'balanced', perCall: { graph_signals: true } }));
+    const off = knobsHash(resolveSearchMode({ mode: 'balanced', perCall: { graph_signals: false } }));
+    expect(on).not.toBe(off);
+  });
+
+  test('SEARCH_MODE_CONFIG_KEYS includes search.graph_signals', () => {
+    expect(SEARCH_MODE_CONFIG_KEYS).toContain('search.graph_signals');
+  });
+
+  test('attributeKnob reports source correctly for graph_signals', () => {
+    const input = { mode: 'balanced', perCall: { graph_signals: false } };
+    const resolved = resolveSearchMode(input);
+    const attr = attributeKnob('graph_signals', input, resolved);
+    expect(attr.source).toBe('per-call');
+    expect(attr.value).toBe(false);
+  });
+
+  test('attributeKnob mode source when no override', () => {
+    const input = { mode: 'tokenmax' };
+    const resolved = resolveSearchMode(input);
+    const attr = attributeKnob('graph_signals', input, resolved);
+    expect(attr.source).toBe('mode');
+    expect(attr.value).toBe(true);
   });
 });
