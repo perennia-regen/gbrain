@@ -1,20 +1,17 @@
 # GBrain
 
-Your AI agent is smart but forgetful. GBrain gives it a brain.
+**Search gives you raw pages. Think gives you the answer.** GBrain is the brain layer your AI agent has been missing, and the only one that does synthesis, graph traversal, and gap analysis in one box.
 
 Built by the President and CEO of Y Combinator to run his actual AI agents. The production brain behind his OpenClaw and Hermes deployments: **146,646 pages, 24,585 people, 5,339 companies**, 66 cron jobs running autonomously. The agent ingests meetings, emails, tweets, voice calls, and original ideas while you sleep. It enriches every person and company it encounters. It fixes its own citations and consolidates memory overnight. You wake up smarter than when you went to bed.
 
-The brain wires itself. Every page write extracts entity references and creates typed links (`attended`, `works_at`, `invested_in`, `founded`, `advises`) with zero LLM calls. Hybrid search. Self-wiring knowledge graph. Structured timeline. Backlink-boosted ranking. Ask "who works at Acme AI?" or "what did Bob invest in this quarter?" and get answers vector search alone can't reach. Benchmarked side-by-side: gbrain lands **P@5 49.1%, R@5 97.9%** on a 240-page Opus-generated rich-prose corpus, beating its graph-disabled variant by **+31.4 points P@5** and ripgrep-BM25 + vector-only RAG by a similar margin. Full BrainBench scorecards live in the sibling [gbrain-evals](https://github.com/garrytan/gbrain-evals) repo.
+Lots of personal-knowledge systems give you keyword matching and grep in a box. GBrain does that, and adds two things nobody else ships together:
 
-**New default in v0.36.2.0: ZeroEntropy** for both embedding (`zembed-1` at 1280d via Matryoshka) and reranker (`zerank-2`). On a real-corpus benchmark vs OpenAI and Voyage: **2.2× faster** (442ms vs OpenAI 973ms), **2.6× cheaper at regular pricing** ($0.05/M vs OpenAI $0.13), wins 11 of 20 queries head-to-head, reshuffles 60% of top-1 results when used as a second-pass reranker. Bring your own key from [zeroentropy.dev](https://dashboard.zeroentropy.dev), or switch to OpenAI/Voyage at install time via `gbrain init --pglite --embedding-model <provider:model> --embedding-dimensions <N>` — your choice is sticky. To switch an existing brain, run `gbrain reinit-pglite --embedding-model <provider:model> --embedding-dimensions <N>` (PGLite) or follow the SQL recipe in `docs/embedding-migrations.md` (Postgres). `gbrain config set embedding_model` is refused as of v0.37.11.0 because the schema column has to resize too.
+- **`gbrain think`**: synthesized, well-cited answers across people, companies, deals, and ideas. Not "here are 10 chunks that mention your query"; an actual answer with citations and an explicit note on what the brain doesn't know yet. The gap analysis is the part that changes how you use the brain.
+- **A self-wiring knowledge graph.** Every page write extracts entity refs and creates typed edges (`attended`, `works_at`, `invested_in`, `founded`, `advises`) with zero LLM calls. Ask "who works at Acme AI?" or "what did Bob invest in this quarter?" and get answers vector search alone can't reach. Benchmarked: **P@5 49.1%, R@5 97.9%** on a 240-page Opus-generated rich-prose corpus, **+31.4 points P@5** over its graph-disabled variant and over ripgrep-BM25 + vector-only RAG by a similar margin. Full BrainBench scorecards live in the sibling [gbrain-evals](https://github.com/garrytan/gbrain-evals) repo.
 
-GBrain is those patterns, generalized. Install in 30 minutes. Your agent does the work. As Garry's personal agent gets smarter, so does yours.
+The point of building a 100K-page brain is to use it as a strategic moat. To never lose context. To query what's in your own head without re-reading it. `gbrain think` is what makes the moat usable. The 24/7 dream cycle is what keeps it sharp. Both run on your hardware, your DB, your keys.
 
-**New in v0.40.2.0 — `gbrain think` grounds temporal answers in the typed-claim timeline.** Ask "when did Marco last switch jobs" or "what was the ARR in March" and the answer comes back rooted in a real chronological timeline of the metric + event facts your brain already extracted via the `extract_facts` cycle phase. Default ON. The intent classifier (`temporal` / `knowledge_update` / `other`) is a regex pass with zero LLM cost; the `'other'` fast path short-circuits with zero extra SQL. Migration v82 adds a nullable `facts.event_type` column so the same plumbing carries event-shaped rows (`'meeting'`, `'job_change'`, `'location_change'`) alongside metric rows. Flip `think.trajectory_enabled=false` to opt out. Debug with `GBRAIN_THINK_DEBUG=1 gbrain think "..."` to see the spliced prompt. The same trajectory plumbing also lands in the LongMemEval benchmark with a methodology change disclosed in `methodology_note: extractor=haiku-preprocess-full-haystack-v1` — published scores are "gbrain + Haiku-preprocess pipeline" vs "gbrain alone", NOT directly comparable to baseline LongMemEval numbers without that note.
-
-**New in v0.36.4.0 — Your agent drives the brain to 90/100 by itself.** One command does the loop you used to run by hand: `gbrain doctor --remediate --yes --target-score 90 --max-usd 5`. It computes a dependency-ordered plan (sync before extract, embed after consolidate), submits each step as a Minion job, re-checks score between every step, and refuses to spend past your cost cap. Cron can drive it unattended. `gbrain doctor --remediation-plan --json` previews what would run. Autopilot now does the same thing on its 5-minute tick: small problems get targeted handlers, big problems get the full cycle, a healthy brain sleeps for 60 minutes instead of grinding through synthesize+patterns+embed every tick. Eleven new things you can submit as background jobs (`reindex`, `repair-jsonb`, `orphans`, `integrity`, `purge`, plus six cycle phases); three of them (synthesize, patterns, consolidate) are PROTECTED so an MCP-connected agent can't silently burn Anthropic credits. New `--background` flag on `gbrain embed` submits the job and exits with `job_id=N` for shell composition.
-
-**New in v0.35.7 — Temporal trajectory + founder scorecard.** Author typed metric assertions in the `## Facts` fence (`mrr=50000`, `arr=2000000`, `team_size=12`) and gbrain stores them as first-class typed columns. `gbrain eval trajectory companies/acme-example` prints the chronological history with regressions auto-flagged inline. `gbrain founder scorecard companies/acme-example` rolls up claim accuracy, consistency, growth direction, and red flags into a stable `schema_version: 1` JSON contract. New MCP op `find_trajectory` exposes the same data to agents (read scope, visibility-filtered for remote callers). The `consolidate` cycle phase now writes `valid_until` on chronologically-superseded facts AND uses semantic upsert on `(page_id, claim, since_date)` — re-running the dream cycle on stable input is now a true no-op (fixed a pre-existing duplicate-takes bug from prior versions).
+It's easier to ship a daemon that runs 24/7 to ingest, enrich, and consolidate than it is to keep an agent in chat working hard. GBrain is that daemon, generalized. Install in 30 minutes. Your agent does the work. As Garry's personal agent gets smarter, so does yours.
 
 > **~30 minutes to a fully working brain.** Database ready in 2 seconds (PGLite, no server). You just answer questions about API keys.
 
@@ -65,6 +62,26 @@ gbrain serve --http       # HTTP MCP with OAuth 2.1 + admin dashboard
 
 Per-client guides (Claude Desktop, Code, Cursor, ChatGPT, Perplexity, Cowork) live under [`docs/mcp/`](docs/mcp/). HTTP server supports DCR-style client registration, scope-gated access (`read`/`write`/`admin`), and built-in rate limiting.
 
+## Search vs think
+
+Two ways to query your brain. They are different things.
+
+```bash
+# search: raw pages, fast, no LLM cost
+gbrain search "who's working on AI agents at portfolio companies?"
+
+# think: synthesized answer with citations and gap analysis
+gbrain think "who's working on AI agents at portfolio companies?"
+```
+
+`search` returns the top retrieved pages, ranked by hybrid scoring (vector + keyword + RRF + source-tier boost + reranker). Use it when you want raw material to skim: agent context windows, citation lookups, finding a specific quote.
+
+`think` runs the same retrieval, then composes a synthesized answer across the results with explicit citations to the source pages AND an honest note on what the brain doesn't know yet. The gap analysis is the differentiator: the answer tells you when a page is stale, when a claim is uncited, when two pages contradict each other, when there's a hole you should fill.
+
+**Why it compounds.** Pair `think` with `find_trajectory` and you get answers like *"how have the company's metrics changed AND what does the team look like right now AND what did they promise / share AND when did we last meet AND what's the value-add I can offer here"*: well-scored, well-cited, in one shot. That's the strategic moat. That's why building a 100K-page brain is worth the effort.
+
+`gbrain agent run "..."` exposes the same surface to a sub-agent through the Minions queue, with crash-safe two-phase persistence. Same answers, durable.
+
 ## How to get data in (v0.38+)
 
 One command, local or hosted, synchronous receipt:
@@ -96,6 +113,16 @@ For mobile capture, the inbox folder source picks up anything dropped into
 Third-party skillpacks can ship custom ingestion sources (Granola, Linear,
 voice, OCR) against the versioned `IngestionSource` contract at
 `gbrain/ingestion`. See [`docs/skillpack-anatomy.md`](docs/skillpack-anatomy.md).
+
+## Recent releases
+
+- **v0.40.4.0** — per-query graph signals in hybrid search; adjacency, cross-source, and session-demote boosts. `gbrain search --explain` shows per-stage attribution.
+- **v0.40.2.0** — `gbrain think` grounds temporal answers in the typed-claim timeline. Ask "when did Marco last switch jobs" or "what was the ARR in March" and the answer is rooted in real chronology. Default on; flip `think.trajectory_enabled=false` to opt out.
+- **v0.36.4.0** — `gbrain doctor --remediate --yes --target-score 90 --max-usd 5` drives the brain to 90/100 unattended. Cron-safe. Eleven new background-job types; three protected so an MCP-connected agent can't silently burn credits.
+- **v0.36.2.0** — ZeroEntropy is the new default for embedding (`zembed-1` at 1280d via Matryoshka) and reranker (`zerank-2`). 2.2× faster than OpenAI (442ms vs 973ms), 2.6× cheaper ($0.05/M vs $0.13), wins 11 of 20 head-to-head, reshuffles 60% of top-1 results as a second-pass reranker. Bring your own key from [zeroentropy.dev](https://dashboard.zeroentropy.dev), or switch providers at install time with `gbrain init --pglite --embedding-model <provider:model> --embedding-dimensions <N>`.
+- **v0.35.7** — Temporal trajectory + founder scorecard. Author typed metric assertions in the `## Facts` fence (`mrr=50000`, `arr=2000000`, `team_size=12`); `gbrain eval trajectory` prints chronological history with regressions flagged inline. `gbrain founder scorecard` rolls up claim accuracy, consistency, growth direction, red flags. New MCP op `find_trajectory` exposes the same data to agents.
+
+Full notes in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## What it does (the loop)
 
