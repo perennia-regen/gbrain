@@ -2807,10 +2807,17 @@ const find_experts: Operation = {
     // thread was missing entirely. The op calls findExperts → hybridSearch
     // internally; without the thread an auth'd src-A whoknows query would
     // surface src-B people in the rankings.
+    // v0.40.6.0 T1.5 wiring (D4): consult the active pack for expert
+    // types; pack-load failure → empty filter (NOT hardcoded defaults
+    // per the silent-violation bug class Finding 1.3 closed).
+    const { loadActivePackBestEffort, expertTypesFromPack } = await import('./schema-pack/index.ts');
+    const pack = await loadActivePackBestEffort(ctx);
+    const types = pack ? expertTypesFromPack(pack.manifest) : [];
     return findExperts(ctx.engine, {
       topic,
       limit: typeof p.limit === 'number' ? p.limit : undefined,
       explain: p.explain === true,
+      types: types as never,
       ...sourceScopeOpts(ctx),
     });
   },
