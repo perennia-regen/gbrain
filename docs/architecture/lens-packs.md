@@ -102,7 +102,7 @@ stays in code, validated at pack-load).
 
 ## take_domain_assignments table (T1)
 
-New JOIN table (migration v93):
+New JOIN table (migration v94):
 `take_domain_assignments(take_id BIGINT FK, domain TEXT, pack TEXT,
 source TEXT, confidence REAL, assigned_at TIMESTAMPTZ, PK(take_id,
 domain))`. Multi-domain assignment honest — a take about "Sequoia's

@@ -3,10 +3,10 @@ import { PGLiteEngine } from '../src/core/pglite-engine.ts';
 import { MIGRATIONS, LATEST_VERSION } from '../src/core/migrate.ts';
 import { resetPgliteState } from './helpers/reset-pglite.ts';
 
-// v0.41 R-MIG IRON-RULE regression: v93 take_domain_assignments table
+// v0.41.2 R-MIG IRON-RULE regression: v94 take_domain_assignments table
 //
 // Pinned contracts:
-// 1. Migration v93 exists in the MIGRATIONS array with the canonical name.
+// 1. Migration v94 exists in the MIGRATIONS array with the canonical name.
 // 2. Table created cleanly via initSchema() on a fresh PGLite.
 // 3. Composite PK (take_id, domain) prevents duplicate (take, domain) pairs.
 // 4. FK to takes(id) with ON DELETE CASCADE — deleting a take cascades assignments.
@@ -33,15 +33,15 @@ beforeEach(async () => {
   await resetPgliteState(engine);
 });
 
-describe('v0.41 R-MIG: take_domain_assignments migration v93', () => {
-  test('v93 exists in MIGRATIONS with canonical name', () => {
-    const v93 = MIGRATIONS.find(m => m.version === 93);
-    expect(v93).toBeDefined();
-    expect(v93?.name).toBe('take_domain_assignments');
+describe('v0.41.2 R-MIG: take_domain_assignments migration v94', () => {
+  test('v94 exists in MIGRATIONS with canonical name', () => {
+    const v94 = MIGRATIONS.find(m => m.version === 94);
+    expect(v94).toBeDefined();
+    expect(v94?.name).toBe('take_domain_assignments');
   });
 
-  test('LATEST_VERSION >= 93', () => {
-    expect(LATEST_VERSION).toBeGreaterThanOrEqual(93);
+  test('LATEST_VERSION >= 94', () => {
+    expect(LATEST_VERSION).toBeGreaterThanOrEqual(94);
   });
 
   test('table is created and queryable after initSchema()', async () => {
@@ -293,16 +293,16 @@ describe('v0.41 R-MIG: take_domain_assignments migration v93', () => {
   });
 
   test('PGLite + Postgres parity — source DDL matches between sql and sqlFor.pglite', () => {
-    const v93 = MIGRATIONS.find(m => m.version === 93);
-    expect(v93).toBeDefined();
-    expect(v93?.sql).toContain('CREATE TABLE IF NOT EXISTS take_domain_assignments');
-    expect(v93?.sql).toContain('REFERENCES takes(id) ON DELETE CASCADE');
-    expect(v93?.sql).toContain('PRIMARY KEY (take_id, domain)');
-    expect(v93?.sql).toContain('idx_take_domain_assignments_domain');
-    expect(v93?.sqlFor?.pglite).toContain('CREATE TABLE IF NOT EXISTS take_domain_assignments');
-    expect(v93?.sqlFor?.pglite).toContain('REFERENCES takes(id) ON DELETE CASCADE');
-    expect(v93?.sqlFor?.pglite).toContain('PRIMARY KEY (take_id, domain)');
-    expect(v93?.sqlFor?.pglite).toContain('idx_take_domain_assignments_domain');
+    const v94 = MIGRATIONS.find(m => m.version === 94);
+    expect(v94).toBeDefined();
+    expect(v94?.sql).toContain('CREATE TABLE IF NOT EXISTS take_domain_assignments');
+    expect(v94?.sql).toContain('REFERENCES takes(id) ON DELETE CASCADE');
+    expect(v94?.sql).toContain('PRIMARY KEY (take_id, domain)');
+    expect(v94?.sql).toContain('idx_take_domain_assignments_domain');
+    expect(v94?.sqlFor?.pglite).toContain('CREATE TABLE IF NOT EXISTS take_domain_assignments');
+    expect(v94?.sqlFor?.pglite).toContain('REFERENCES takes(id) ON DELETE CASCADE');
+    expect(v94?.sqlFor?.pglite).toContain('PRIMARY KEY (take_id, domain)');
+    expect(v94?.sqlFor?.pglite).toContain('idx_take_domain_assignments_domain');
   });
 
   test('pre-existing takes without assignment co-exist (backward compat)', async () => {
