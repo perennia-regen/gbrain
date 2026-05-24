@@ -42,7 +42,7 @@ gbrain capture --source markdown-greenfield --repo ~/git/brain --dry-run --limit
 gbrain capture --source markdown-greenfield --repo ~/git/brain
 ```
 
-After migrating, retire your OpenClaw's parallel atom-pipeline-coordinator + atom-backfill-coordinator crons; gbrain's autopilot already runs extract_atoms + synthesize_concepts inside every dream cycle when a creator-flavored pack is active. See `docs/migrations/v0.41-markdown-greenfield.md` for the full operator guide.
+After migrating, retire your OpenClaw's parallel atom-pipeline-coordinator + atom-backfill-coordinator crons; gbrain's autopilot already runs extract_atoms + synthesize_concepts inside every dream cycle when a creator-flavored pack is active. See `docs/migrations/v0.42-markdown-greenfield.md` for the full operator guide.
 
 ### Itemized changes
 
@@ -74,15 +74,15 @@ After migrating, retire your OpenClaw's parallel atom-pipeline-coordinator + ato
 - `gstack-learnings` (mode: 'trickle') — daemon-side bridge at `src/core/ingestion/sources/gstack-learnings.ts`. Watches `~/.gstack/projects/{repo}/learnings.jsonl`, emits each line as a `learning`-typed IngestionEvent. Activates when engineer or gbrain-everything pack is active.
 
 **Three eval commands (scaffolds):**
-- `gbrain eval extract-atoms`, `gbrain eval synthesize-concepts`, `gbrain eval markdown-greenfield` — command surfaces ship; parity-baseline implementations against your OpenClaw's existing 13K atoms + 11K concepts on a 500-page sample subset land in v0.41.1.
+- `gbrain eval extract-atoms`, `gbrain eval synthesize-concepts`, `gbrain eval markdown-greenfield` — command surfaces ship; parity-baseline implementations against your OpenClaw's existing 13K atoms + 11K concepts on a 500-page sample subset land in v0.42.0.1.
 
-**Tests:** 16 new test files, 199 cases pinning the v0.41 contracts (R-MIG migration regression, R-GATE orchestrator pack gate, manifest schema shape, lens pack declarations, calibration aggregator math, ingestion mode discriminator, source emit pipelines).
+**Tests:** 16 new test files, 199 cases pinning the v0.42.0.0 contracts (R-MIG migration regression, R-GATE orchestrator pack gate, manifest schema shape, lens pack declarations, calibration aggregator math, ingestion mode discriminator, source emit pipelines).
 
 **Documentation:**
-- `docs/architecture/lens-packs.md` — full lens pack architecture, four-pack diagram, calibration widening explainer, v0.41.1 follow-ups.
-- `docs/migrations/v0.41-markdown-greenfield.md` — operator guide for the bulk migration: dry-run, audit JSONL inspection, retiring your OpenClaw's parallel crons.
+- `docs/architecture/lens-packs.md` — full lens pack architecture, four-pack diagram, calibration widening explainer, v0.42.0.1 follow-ups.
+- `docs/migrations/v0.42-markdown-greenfield.md` — operator guide for the bulk migration: dry-run, audit JSONL inspection, retiring your OpenClaw's parallel crons.
 
-### v0.41.1 follow-ups (filed)
+### v0.42.0.1 follow-ups (filed)
 
 - Per-page-type `frontmatter_validators` on PageTypeSchema (D11 — atom_type enum reads from manifest at runtime; currently hardcoded in extract_atoms.ts).
 - 3-check quality gate (truism / punchline / entity-page reject) as a multi-pass refinement for extract_atoms.
