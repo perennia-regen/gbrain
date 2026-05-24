@@ -17,6 +17,7 @@ import {
   shouldPromptAtThreshold,
   type RecentJobStats,
 } from '../src/core/minions/batch-projection.ts';
+import { withEnv } from './helpers/with-env.ts';
 
 function coldStats(opts: Partial<RecentJobStats> = {}): RecentJobStats {
   return {
@@ -232,10 +233,8 @@ describe('shouldPromptAtThreshold', () => {
     ).toBe(false);
   });
 
-  test('env var GBRAIN_BATCH_PROMPT_THRESHOLD_USD lowers the prompt floor', () => {
-    const saved = process.env.GBRAIN_BATCH_PROMPT_THRESHOLD_USD;
-    process.env.GBRAIN_BATCH_PROMPT_THRESHOLD_USD = '1';
-    try {
+  test('env var GBRAIN_BATCH_PROMPT_THRESHOLD_USD lowers the prompt floor', async () => {
+    await withEnv({ GBRAIN_BATCH_PROMPT_THRESHOLD_USD: '1' }, async () => {
       expect(
         shouldPromptAtThreshold({
           total_duration_ms: 60_000,
@@ -246,9 +245,6 @@ describe('shouldPromptAtThreshold', () => {
           cold_start: false,
         }),
       ).toBe(true);
-    } finally {
-      if (saved === undefined) delete process.env.GBRAIN_BATCH_PROMPT_THRESHOLD_USD;
-      else process.env.GBRAIN_BATCH_PROMPT_THRESHOLD_USD = saved;
-    }
+    });
   });
 });

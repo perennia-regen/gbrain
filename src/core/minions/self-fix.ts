@@ -78,10 +78,11 @@ export async function computeChainDepth(engine: BrainEngine, jobId: number): Pro
   let depth = 0;
   let cursor: number | null = jobId;
   while (cursor !== null && depth < 10 /* safety cap */) {
-    const rows = await engine.executeRaw<{ parent_job_id: number | null; data: unknown }>(
-      `SELECT parent_job_id, data FROM minion_jobs WHERE id = $1`,
-      [cursor],
-    );
+    const rows: Array<{ parent_job_id: number | null; data: unknown }> =
+      await engine.executeRaw(
+        `SELECT parent_job_id, data FROM minion_jobs WHERE id = $1`,
+        [cursor],
+      );
     if (rows.length === 0) break;
     const data = rows[0]!.data as Record<string, unknown> | null;
     if (data && data.is_self_fix_child === true) {
@@ -206,7 +207,7 @@ export async function submitSelfFixChild(
     };
     const child = await queue.add(
       'subagent',
-      childData,
+      childData as unknown as Record<string, unknown>,
       { parent_job_id: parent.id, max_attempts: 1 }, // single attempt; if self-fix fails, that's terminal
       { allowProtectedSubmit: true },
     );
