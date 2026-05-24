@@ -461,6 +461,26 @@ export interface SubagentHandlerData {
    * cache hits ride entirely on the caller-supplied prefix).
    */
   system_no_tool_preamble?: boolean;
+  /**
+   * v0.41 E6 — opt OUT of classifier-gated auto-resubmit on terminal
+   * failures. Default behavior (omitted or false) runs the
+   * `RECOVERABLE_CLUSTERS` self-fix path when the failure classifies as
+   * one of {`prompt_too_long`, `tool_schema_mismatch`, `malformed_json`}.
+   * Set true to disable per-job (useful for graders / probes where a
+   * retry would muddy the signal).
+   */
+  no_self_fix?: boolean;
+  /**
+   * v0.41 E6 — internal marker set by `submitSelfFixChild` so the
+   * chain-depth walker can count self-fix ancestors. Counter starts at
+   * 0 on a fresh user-submitted job; increments by 1 per chain hop.
+   */
+  is_self_fix_child?: boolean;
+  /**
+   * v0.41 E6 — which classifier bucket triggered this self-fix child.
+   * Read by audit + diagnostic surfaces (jobs get / dashboard).
+   */
+  self_fix_cluster?: string;
 }
 
 /**

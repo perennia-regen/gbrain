@@ -576,6 +576,41 @@ HANDLER TYPES (built in)
       } catch {
         // Pre-v93 brain — no table. Silent skip.
       }
+
+      // v0.41 D3 — error clustering. Optional via --cluster-errors flag so
+      // operators only see the breakdown when triaging a fail-heavy batch
+      // (default stats output stays scannable). Pulls last 24h of dead +
+      // failed jobs, classifies by error-classify.ts buckets, sorts by
+      // count, surfaces top 5 with paste-ready retry hints.
+      if (hasFlag(args, '--cluster-errors')) {
+        try {
+          const { clusterErrors } = await import('../core/minions/error-classify.ts');
+          const errRows = await engine.executeRaw<{ id: number; last_error: string | null }>(
+            `SELECT id, error_text AS last_error FROM minion_jobs
+              WHERE status IN ('dead', 'failed')
+                AND updated_at > now() - interval '24 hours'`,
+          );
+          if (errRows.length === 0) {
+            console.log(`\n  Error clusters (24h): no dead/failed jobs`);
+          } else {
+            const clusters = clusterErrors(errRows);
+            console.log(`\n  Error clusters (24h):`);
+            for (const c of clusters.slice(0, 5)) {
+              const sample = c.sample_ids.length > 0
+                ? `  (e.g. \`gbrain jobs get ${c.sample_ids[0]}\`)` : '';
+              console.log(`    ${String(c.count).padStart(4)} × ${c.cluster.padEnd(22)}${sample}`);
+            }
+            if (clusters.length > 5) {
+              console.log(`    + ${clusters.length - 5} more cluster${clusters.length - 5 === 1 ? '' : 's'}`);
+            }
+          }
+        } catch (e) {
+          // error-classify import or SQL fail. Don't block stats output.
+          if (process.env.GBRAIN_DEBUG === '1') {
+            console.error(`[jobs stats] cluster-errors skipped: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+      }
       break;
     }
 
@@ -1031,6 +1066,18 @@ HANDLER TYPES (built in)
       });
 
       await supervisor.start();
+      break;
+    }
+
+    case 'watch': {
+      // v0.41 D2 — live TTY dashboard (or JSON snapshots on non-TTY).
+      try { await queue.ensureSchema(); }
+      catch (e) { console.error(e instanceof Error ? e.message : String(e)); process.exit(1); }
+      const { runWatch } = await import('./jobs-watch.ts');
+      const refreshArg = args.find(a => a.startsWith('--refresh-ms='));
+      const refreshMs = refreshArg ? parseInt(refreshArg.split('=')[1] ?? '1000', 10) : 1000;
+      const json = hasFlag(args, '--json');
+      await runWatch(engine, { refreshMs, json });
       break;
     }
 
