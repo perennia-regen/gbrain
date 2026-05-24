@@ -17,6 +17,20 @@ It's easier to ship a daemon that runs 24/7 to ingest, enrich, and consolidate t
 
 > **LLMs:** fetch [`llms.txt`](llms.txt) for the documentation map, or [`llms-full.txt`](llms-full.txt) for the same map with core docs inlined in one fetch. **Agents:** start with [`AGENTS.md`](AGENTS.md) (or [`CLAUDE.md`](CLAUDE.md) if you're Claude Code).
 
+## What this looks like
+
+A real example pulled verbatim from [BrainBench Cat 29](https://github.com/garrytan/gbrain-evals/blob/main/docs/benchmarks/2026-05-23-v0.40.6.0-snapshot.md) — the same question, the same 164-page synthetic brain, judged 0-10 by Claude Haiku on accuracy + groundedness + utility.
+
+**Question:** *"Who works at the Horizon TECH 6 company? What roles do they hold?"*
+
+| | Typical personal-knowledge brain (top-K vector retrieval over chat sessions, what MemPalace / Mem0 / Hindsight ship) | GBrain `think` (same retrieval + synthesis + gap analysis) |
+|---|---|---|
+| **What you get back** | Top retrieved pages with snippets:<br>1. `companies/horizon-tech-6` — "A embedding-providers company..."<br>2. `deal/horizon-tech-6-seed` — "raised $32M seed..."<br>3. Three people pages from other companies (Orbit Bio, Echo Robotics, Pulse Tech) | A written answer:<br>"None of the retrieved people pages list `companies/horizon-tech-6` as their employer. The company page describes Horizon TECH 6 as an embedding-providers company founded in 2024, with team size growing from 4 (2025-03-01) to 19 (2026-02-15), but does not name any individuals. The related deal page notes a $32M seed round led by `companies/widget-systems-1`, but names no Horizon TECH 6 employees." |
+| **Haiku judge score** | **1 / 10** | **9 / 10** |
+| **Why** | Retrieved the right company page but the three "people" returned actually work at other companies — a downstream agent reading these would hallucinate them as Horizon employees | Correctly identifies what the brain knows AND flags what it doesn't. No hallucination. Citations on every claim. |
+
+Across five multi-page relational questions, `gbrain think` averages **5.60/10** vs raw search **1.60/10** — a **+4.00 point** Haiku-judged lift, with think winning 3 of 5 questions. The gap analysis ("brain doesn't know the answer to this part") is the part nobody else ships. Full Cat 29 receipt: [`docs/benchmarks/2026-05-23-v0.40.6.0-snapshot.md`](https://github.com/garrytan/gbrain-evals/blob/main/docs/benchmarks/2026-05-23-v0.40.6.0-snapshot.md).
+
 ## Install
 
 GBrain runs in three shapes. Pick the one that matches how you use AI agents today.
