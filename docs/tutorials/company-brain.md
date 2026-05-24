@@ -29,7 +29,7 @@ It is also **not** a thin-client-everywhere setup. Your personal agent stays as 
 
 ### What you get that one person's brain doesn't
 
-- **Shared memory.** The whole team queries the same brain. The contract notes that alice wrote on Tuesday show up when bob asks about that customer on Friday, with citations back to alice's notes.
+- **Shared memory.** The whole team queries the same brain. The contract notes that Alice wrote on Tuesday show up when Bob asks about that customer on Friday, with citations back to Alice's notes.
 - **Scoped privacy.** Performance reviews don't leak into customer queries. Legal docs don't leak into sales searches. We fuzz-tested this across every read path and got zero leaks.
 - **One sync pipeline.** Your brain git repo (or several if you want them isolated per team) feeds the brain. Everyone sees the latest.
 - **One operating burden.** One server to monitor, not one per user.
@@ -93,7 +93,7 @@ There are two ways to scope teammates' access. They suit different deployment sh
 
 **Model A: separate sources with OAuth scoping (recommended for true multi-user with different AI clients).** What this tutorial walks you through. Each teammate gets their own OAuth client, which carries `--source` + `--federated-read` flags. The brain refuses cross-source reads at the SQL layer; isolation is database-enforced. Each teammate can run their own MCP-aware client (Claude Code, Cursor, their own OpenClaw, etc.) and the scoping holds.
 
-**Model B: one source, directory-based per-person scoping (simpler for one-agent-serves-everyone setups).** The shape I actually run in production: a single source called `default`, with a `partners/<slug>/` convention inside it (e.g. `partners/alice-example/`, `partners/bob-example/`). Each partner gets their own subdirectory holding their personal pages: `partners/alice-example/USER.md`, `partners/alice-example/concepts/`, `partners/alice-example/sources/`, etc. There's no OAuth-enforced isolation; the agent itself enforces "alice's writes go to her partners/ subdir." This is the right model when ONE agent (yours) serves everyone over Telegram or a single shared interface. It's simpler ops, no per-user OAuth, but the scoping is convention-only.
+**Model B: one source, directory-based per-person scoping (simpler for one-agent-serves-everyone setups).** The shape I actually run in production: a single source called `default`, with a `partners/<slug>/` convention inside it (e.g. `partners/alice-example/`, `partners/bob-example/`). Each partner gets their own subdirectory holding their personal pages: `partners/alice-example/USER.md`, `partners/alice-example/concepts/`, `partners/alice-example/sources/`, etc. There's no OAuth-enforced isolation; the agent itself enforces "Alice's writes go to her partners/ subdir." This is the right model when ONE agent (yours) serves everyone over Telegram or a single shared interface. It's simpler ops, no per-user OAuth, but the scoping is convention-only.
 
 For most company-brain installs (10+ teammates each with their own AI client), Model A is the right starting point. If you're running the fat-agent-serves-everyone pattern from the personal-brain tutorial, Model B is genuinely simpler. You can also mix: separate sources for the obviously-different ones (customer notes vs internal-only) AND a `partners/<slug>/` convention inside the shared source for per-person workspace.
 
@@ -103,13 +103,13 @@ Inside each source, give each teammate their own subfolder. This is the structur
 
 ```
 customers/
-├── alice-example/                      ← alice's customer notebook
+├── alice-example/                      ← Alice's customer notebook
 │   ├── customers/
 │   │   ├── acme-co.md
 │   │   └── widget-systems.md
 │   └── meetings/
 │       └── 2026-05-21-acme-renewal.md
-├── bob-example/                        ← bob's customer notebook
+├── bob-example/                        ← Bob's customer notebook
 │   └── customers/
 │       └── orbit-bio.md
 └── shared-customers/                   ← things both can see
@@ -119,7 +119,7 @@ customers/
 Two things this structure buys you:
 
 1. **Each teammate's writes go to their own folder** even though they're in the same source. No accidental overwrites.
-2. **You can later split a person's folder into its own source** (if alice leaves and a new person takes her accounts, you can move `alice-example/` to a new source named after the new person and adjust scoping accordingly).
+2. **You can later split a person's folder into its own source** (if Alice leaves and a new person takes her accounts, you can move `alice-example/` to a new source named after the new person and adjust scoping accordingly).
 
 Same shape for `internal/`: `internal/alice-example/` for her HR docs, `internal/bob-example/` for his, `internal/legal/` for legal docs everyone can read, etc.
 
@@ -218,9 +218,9 @@ A note on the flags:
 Before you hand the brain to teammates, verify isolation. Two terminal windows on your local machine using each client's credentials:
 
 ```bash
-# Terminal 1, as alice
-export GBRAIN_REMOTE_CLIENT_ID=<alice's client_id>
-export GBRAIN_REMOTE_CLIENT_SECRET=<alice's client_secret>
+# Terminal 1, as Alice
+export GBRAIN_REMOTE_CLIENT_ID=<Alice's client_id>
+export GBRAIN_REMOTE_CLIENT_SECRET=<Alice's client_secret>
 export GBRAIN_REMOTE_MCP_URL=https://brain.acme-co.com/mcp
 
 gbrain search "performance review" --remote
@@ -229,7 +229,7 @@ gbrain search "performance review" --remote
 Alice should see results only from `customers` and `shared`. The performance-review notes live in `internal`, which she's not scoped to read. She shouldn't see them.
 
 ```bash
-# Terminal 2, as bob (export his credentials similarly)
+# Terminal 2, as Bob (export his credentials similarly)
 gbrain search "performance review" --remote
 ```
 
@@ -241,7 +241,7 @@ If both queries return correctly scoped results, isolation is working.
 
 ## Part 6: Set up per-person crons
 
-The personal-brain install runs the dream cycle (overnight enrichment) once per night for one user. A company brain needs per-person crons because each teammate has their own context: alice wants a 7am customer-pipeline digest, bob wants a 9am ops-status report, carol wants a contract-compliance check every Monday.
+The personal-brain install runs the dream cycle (overnight enrichment) once per night for one user. A company brain needs per-person crons because each teammate has their own context: Alice wants a 7am customer-pipeline digest, Bob wants a 9am ops-status report, Carol wants a contract-compliance check every Monday.
 
 Each cron is just a scheduled `gbrain agent run` call scoped to the teammate's client credentials. The schedule lives in the workspace repo (the one AlphaClaw deployed in the personal-brain tutorial), in a `crons/` directory. A typical layout:
 
@@ -272,7 +272,7 @@ is. Output as a markdown digest, post to Slack #alice-customers, save a
 copy to customers/alice-example/digests/YYYY-MM-DD-pipeline.md.
 ```
 
-The `client:` field tells the cron runner which OAuth client to use, which enforces the scoping. Alice's cron can only read alice's sources and write to alice's folder. It cannot accidentally touch bob's customer notes.
+The `client:` field tells the cron runner which OAuth client to use, which enforces the scoping. Alice's cron can only read Alice's sources and write to Alice's folder. It cannot accidentally touch Bob's customer notes.
 
 To install the cron schedule, commit the file to the workspace repo and let AlphaClaw pick it up on next deploy. The cron-scheduler skill (one of the 60 that GBrain installed) handles the dispatch.
 
@@ -282,8 +282,8 @@ To install the cron schedule, commit the file to the workspace repo and let Alph
 
 The 60+ skills GBrain installs are generic. Your team probably wants a few that are specific to them. Examples:
 
-- `onboarding-new-hire`. Only carol (HR) runs this. Walks through generating a welcome packet, scheduling intro meetings, provisioning accounts.
-- `customer-success-followup`. Only alice (sales) runs this. Pulls latest customer page, drafts a follow-up email, posts to her review queue.
+- `onboarding-new-hire`. Only Carol (HR) runs this. Walks through generating a welcome packet, scheduling intro meetings, provisioning accounts.
+- `customer-success-followup`. Only Alice (sales) runs this. Pulls latest customer page, drafts a follow-up email, posts to her review queue.
 - `weekly-team-digest`. Only you (admin) run this. Aggregates everyone's published pages into one weekly summary.
 
 Skills are just markdown files in the workspace repo's `skills/` directory. The shape:
@@ -307,7 +307,7 @@ gbrain skillify scaffold onboarding-new-hire
 
 That creates the directory + SKILL.md + routing entry. Edit the SKILL.md to describe the procedure, commit, deploy. The agent picks up the new skill on next request.
 
-Per-person scoping for skills is handled at the routing layer: a skill can declare `allowed_clients: [carol-example]` in its frontmatter. If alice asks her agent to run that skill, the agent refuses with "this skill is scoped to carol-example."
+Per-person scoping for skills is handled at the routing layer: a skill can declare `allowed_clients: [carol-example]` in its frontmatter. If Alice asks her agent to run that skill, the agent refuses with "this skill is scoped to carol-example."
 
 ### Shared rule files at the skills root
 
@@ -354,7 +354,7 @@ What works instead: I personally onboard each new teammate myself. The flow look
 Before they ever log in, I seed their `partners/<their-slug>/` directory (or their dedicated source) with the context they need to feel like the brain already knows them:
 
 - `partners/alice-example/USER.md`. a one-page profile: role, focus areas, current top 3 priorities, the kind of questions they tend to ask, the kind of writing they prefer (terse vs detailed, casual vs formal).
-- `partners/alice-example/concepts/`. 5-10 frameworks or recurring themes that are specifically THEIRS. If alice runs sales, that's "pipeline stage definitions," "ICP criteria," "objection-handling playbooks."
+- `partners/alice-example/concepts/`. 5-10 frameworks or recurring themes that are specifically THEIRS. If Alice runs sales, that's "pipeline stage definitions," "ICP criteria," "objection-handling playbooks."
 - `partners/alice-example/sources/`. links to the documents they care about (their team's shared docs, their inbox conventions, the dashboards they check).
 - 2-3 example brain entries that demonstrate the shape: a customer page they'd recognize, a meeting note from a recent meeting they attended, an idea they've shared with the team.
 
@@ -420,13 +420,13 @@ For Claude Code, Cursor, OpenClaw, Hermes, and other clients, per-client setup s
 
 ## Part 11: First real query as a teammate
 
-Have alice run a real query from her machine. The interesting verb is `gbrain think`, which gives back a synthesized answer instead of raw pages.
+Have Alice run a real query from her machine. The interesting verb is `gbrain think`, which gives back a synthesized answer instead of raw pages.
 
 ```bash
 gbrain think "What's the latest update from acme-co? When did we last talk to them?"
 ```
 
-What alice gets back, assuming the brain has been syncing for a week and her sources contain a customer page for acme-co and several meeting notes:
+What Alice gets back, assuming the brain has been syncing for a week and her sources contain a customer page for acme-co and several meeting notes:
 
 ```
 ## Answer

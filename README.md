@@ -21,20 +21,20 @@ It's easier to ship a daemon that runs 24/7 to ingest, enrich, and consolidate t
 
 ## What this looks like
 
-Say you have a meeting with alice tomorrow. You want to walk in remembering what she works on, when you last talked, and what's still open between you. Here's what you'd type, and what you'd get back.
+Say you have a meeting with Alice tomorrow. You want to walk in remembering what she works on, when you last talked, and what's still open between you. Here's what you'd type, and what you'd get back.
 
 **You ask:**
 
-> "What do I need to know before my meeting with alice tomorrow?"
+> "What do I need to know before my meeting with Alice tomorrow?"
 
 **Most personal-knowledge tools give you back a list of pages.** Something like:
 
 ```
-1. people/alice — Alice runs engineering at acme...
-2. meetings/2026-03-15-alice-q1 — Q1 product review with alice...
-3. meetings/2026-01-08-acme-kickoff — Kickoff meeting with acme team...
+1. people/alice — Alice runs engineering at Acme...
+2. meetings/2026-03-15-alice-q1 — Q1 product review with Alice...
+3. meetings/2026-01-08-acme-kickoff — Kickoff meeting with Acme team...
 4. customers/acme — Acme is a series-B fintech we work with...
-5. notes/2026-04-22 — Quick chat with alice about pricing...
+5. notes/2026-04-22 — Quick chat with Alice about pricing...
 ```
 
 Five pages you now have to open and read yourself to actually prepare. The tool found the right material, but it didn't do the work.
@@ -42,7 +42,7 @@ Five pages you now have to open and read yourself to actually prepare. The tool 
 **GBrain gives you back the answer, with sources:**
 
 ```
-Alice runs engineering at acme (a series-B fintech). You last spoke
+Alice runs engineering at Acme (a series-B fintech). You last spoke
 on April 22 in a quick pricing chat. Three things are still open
 from that conversation:
 
@@ -53,13 +53,13 @@ from that conversation:
 3. She mentioned they're hiring a CISO; you said you'd intro
    someone from your network.
 
-Heads up: nothing's been added to the brain about alice or acme
+Heads up: nothing's been added to the brain about Alice or Acme
 since April 22, six weeks ago. She may have replied through email
 or Slack DM, channels the brain doesn't see. Worth asking her to
 catch up before assuming any of this is still current.
 ```
 
-Every claim has a source page behind it. The "heads up" at the end tells you what the brain doesn't know yet, so you can ask alice about it directly instead of being surprised. The brain just did your meeting prep.
+Every claim has a source page behind it. The "heads up" at the end tells you what the brain doesn't know yet, so you can ask Alice about it directly instead of being surprised. The brain just did your meeting prep.
 
 This is the difference between a search engine and a brain. Search finds the pages. The brain reads them for you and writes the answer.
 
