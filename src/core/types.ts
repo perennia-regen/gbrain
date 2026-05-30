@@ -653,6 +653,15 @@ export interface SearchResult {
    * as canonical" and lets canonicals outrank fuzzy matches.
    */
   alias_resolved_boost?: number;
+  /**
+   * T2 (retrieval-maxpool incident) — multiplier applied by applyTitleBoost
+   * (1.0 = unchanged; default ~1.25x). Fires when the normalized query is a
+   * contiguous token-run inside the page title (or an exact full-title match).
+   * Floor-ratio-gated + clamped so a title hit reorders without burying a
+   * strong semantic match or lying about base_score (the agent's dedup gate
+   * keys off base_score / evidence, not the boosted score).
+   */
+  title_match_boost?: number;
 }
 
 /**

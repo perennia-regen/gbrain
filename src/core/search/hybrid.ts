@@ -18,6 +18,7 @@ import { loadConfigWithEngine } from '../config.ts';
 import { dedupResults } from './dedup.ts';
 import { applyReranker } from './rerank.ts';
 import { autoDetectDetail, classifyQuery, isAmbiguousModalityQuery } from './query-intent.ts';
+import { isTitlePhraseMatch } from './title-match.ts';
 import { expandAnchors, hydrateChunks } from './two-pass.ts';
 import { enforceTokenBudget } from './token-budget.ts';
 import { recordSearchTelemetry } from './telemetry.ts';
@@ -222,6 +223,43 @@ export function applyRecencyBoost(
 }
 
 /**
+ * T2 (retrieval-maxpool incident) — apply the title-phrase boost.
+ *
+ * Fires when the normalized query is a contiguous token-run inside a result's
+ * page title (or an exact full-title match), per `isTitlePhraseMatch`. Mutate-
+ * in-place; caller re-sorts. Mirrors applyBacklinkBoost's floor-gate + stamp.
+ *
+ * Bounded by construction: a single fixed multiplier (`factor`, default 1.25),
+ * floor-ratio-gated so a title hit on a weak-overlap page can't leapfrog a
+ * strong primary hit. `base_score` (stamped at runPostFusionStages entry) is
+ * NOT touched, so the agent's dedup gate still reads true match confidence.
+ *
+ * Why page.title and not "first compiled_truth chunk" (Codex#11): the title is
+ * a stable column; the first chunk is a chunking accident that import changes
+ * could shift. The signal is "the query is the name of this thing."
+ */
+export function applyTitleBoost(
+  results: SearchResult[],
+  query: string,
+  factor: number,
+  floorThreshold?: number,
+): void {
+  if (!query || !Number.isFinite(factor) || factor <= 1.0) return;
+  for (const r of results) {
+    if (!Number.isFinite(r.score)) continue;
+    if (floorThreshold !== undefined && r.score < floorThreshold) continue;
+    if (!r.title) continue;
+    if (isTitlePhraseMatch(query, r.title)) {
+      r.score *= factor;
+      r.title_match_boost = factor; // attribution stamp (v0.40.4 convention)
+    }
+  }
+}
+
+/** Default title-phrase boost multiplier (mode-overridable via `title_boost`). */
+export const DEFAULT_TITLE_BOOST = 1.25;
+
+/**
  * v0.29.1 — runPostFusionStages: wrap backlink + salience + recency in a
  * single stage that fires from EVERY hybridSearch return path (codex
  * pass-1 #2 + pass-2 #4: keyword-only, embed-fail-fallback, full-hybrid).
@@ -277,6 +315,17 @@ export interface PostFusionOpts {
    * wave via search-stats.
    */
   onScoreDistribution?: (dist: import('./graph-signals.ts').ScoreDistribution) => void;
+  /**
+   * T2 — the raw query string, needed by the title-phrase boost stage.
+   * Undefined disables the stage (e.g. image-only queries).
+   */
+  query?: string;
+  /**
+   * T2 — title-phrase boost multiplier (mode-resolved from `title_boost`).
+   * <= 1.0 or undefined disables the stage. Floor-ratio-gated like the
+   * metadata stages so a title hit can't bury a strong semantic match.
+   */
+  titleBoost?: number;
 }
 
 export async function runPostFusionStages(
@@ -347,6 +396,18 @@ export async function runPostFusionStages(
       );
     } catch {
       // Non-fatal.
+    }
+  }
+
+  // T2 — title-phrase boost. Runs after the metadata stages, before graph
+  // signals. Shares the single floor-threshold so a title hit on a weak page
+  // can't leapfrog a strong primary hit (Codex#10). Fail-soft: pure + in-memory,
+  // but guarded so a bad query/title can't throw the whole pipeline.
+  if (opts.query && opts.titleBoost && opts.titleBoost > 1.0) {
+    try {
+      applyTitleBoost(results, opts.query, opts.titleBoost, floorThreshold);
+    } catch {
+      // Non-fatal; preserves the per-stage contract.
     }
   }
 
@@ -651,6 +712,10 @@ export async function hybridSearch(
     // Without this thread, the entire graph-signals wave is dead code —
     // codex outside-voice caught the missing wire pre-merge.
     graphSignalsEnabled: resolvedMode.graph_signals,
+    // T2 — title-phrase boost threaded from resolved mode (`title_boost`).
+    // The raw query drives the matcher; default factor when the knob is unset.
+    query,
+    titleBoost: resolvedMode.title_boost,
   };
 
   // Skip vector search entirely if the gateway has no embedding provider configured (Codex C3).
