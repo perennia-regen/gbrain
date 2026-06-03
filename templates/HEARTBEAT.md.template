@@ -19,7 +19,9 @@ What the agent checks and when. Each job reads the relevant skill file and runs 
 - Brain sync: `gbrain sync --no-pull && gbrain embed --stale`
 
 ### Daily
-- Auto-update check: `gbrain check-update --json`
+- Self-upgrade check: `gbrain self-upgrade --check-only --json` (every `gbrain`
+  invocation also nudges automatically; this is the explicit daily heartbeat for
+  agents that can't ride invocation frequency). Apply with `gbrain self-upgrade`.
 
 ### Weekly
 - Brain health: `gbrain doctor --json`
