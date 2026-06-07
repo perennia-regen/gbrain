@@ -2,6 +2,33 @@
 
 All notable changes to GBrain will be documented in this file.
 
+## [0.42.30.0] - 2026-06-07
+
+**`idea-lineage` is now an agent tool, not just a local command — your coding agent and any federated team-brain client can ask "how has my thinking about X changed" over MCP and get the same dated evidence bundle the CLI returns.** When the gather step first shipped it was deliberately local-only, because the read primitives it composes didn't all scope by source and visibility uniformly. This release closes that gap and lifts the op to the same remote posture as `find_trajectory`: every evidence channel is scoped to the caller's own sources, the entity-trajectory channel returns world-visibility facts only for remote callers (private facts never cross the wire), and the global contradiction trend — which can't yet prove per-finding source scope — is left out of remote results rather than guessed at. A remote caller also can't widen its own scope by passing a `source` outside its grant.
+
+While lifting it, the underlying take search gained real source isolation: it previously scoped only by attributed-holder, which is not a source boundary. Backlinks, timeline, and take search all now accept the federated multi-source scope, with cross-source exclusion pinned by engine-parity tests on both engines.
+
+### Added
+- `idea_lineage` is callable over HTTP/OAuth MCP (previously local-CLI only). Same evidence bundle — matches, related concepts, timeline anchors, takes, optional entity trajectory — now reachable by agents and federated clients, scoped to the caller's sources.
+- The response carries a `partial` flag plus an `errors` list: if one evidence channel fails, the op returns the rest instead of erroring out (wire `schema_version` bumped to 2).
+
+### Changed
+- `getBacklinks`, `getTimeline`, and take search (`searchTakes`/`searchTakesVector`) accept the federated multi-source scope in both the Postgres and PGLite engines; `getTimeline`'s query path was simplified to one composed query.
+- For remote callers, `idea_lineage` returns world-visibility entity-trajectory facts only and omits the global contradiction trend; the optional `source` argument is validated against the caller's allowed sources.
+
+### Fixed
+- Take search now filters by source, not just by attributed-holder, so a caller scoped to one source no longer sees takes from another.
+
+### To take advantage of v0.42.30.0
+
+Local usage is unchanged:
+
+```bash
+gbrain idea-lineage "founder-led sales" --json
+```
+
+Agents reach it as the `idea_lineage` MCP tool automatically after `gbrain upgrade` — no configuration. It returns evidence scoped to the caller's sources; classification (what's a reversal vs an abandoned branch) stays with the agent.
+
 ## [0.42.29.0] - 2026-06-07
 
 **The background-job queue stops thrashing on long jobs, the cycle stops wedging itself, and you can no longer run two supervisors against one queue by accident.** Three fixes plus a voice-agent feature.
