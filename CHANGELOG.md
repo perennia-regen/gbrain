@@ -2,6 +2,29 @@
 
 All notable changes to GBrain will be documented in this file.
 
+## [0.42.42.0] - 2026-06-12
+
+**`gbrain query` no longer pays a flat 10-second exit tax on managed Postgres behind a transaction-mode pooler — and CLI exit codes finally tell the truth on PGLite.** On deployments where the pooler holds sockets open past the bounded pool drain (gbrain#2084, a residual of gbrain#1972), every query printed its results and then sat for 10 seconds until the force-exit banner fired. The cause was two-layered: the hard-deadline timer was armed *before* the operation handler, so a multi-second search on a large brain burned the teardown budget (and any operation slower than 10 seconds was silently killed mid-run with exit 0 and truncated output); and the CLI never exited explicitly on success — it waited for Bun's event loop to drain, which a stuck pooler socket can hold open forever.
+
+The teardown contract now lives in one place: every CLI exit path runs a bounded background-work drain and a bounded disconnect under a backstop whose deadline is computed from the bounds it guards (so it fires only when something violated its own bound), then the process exits explicitly — after fencing stdout/stderr and holding a short aliveness window so piped output is delivered (Bun queues pipe writes in a native buffer that only drains while the process is alive). The most-used command in the CLI now exits in milliseconds-to-a-couple-seconds instead of ten.
+
+Along the way the wave fixed a deeper, silent bug: PGLite's WASM runtime writes its own status into `process.exitCode` at arbitrary points mid-run, which meant **every error exit on PGLite-engine brains has been reporting success (exit 0)** — scripts and agents keying on exit codes never saw failures. The CLI verdict now lives in a gbrain-owned channel that the WASM runtime cannot touch.
+
+### Fixed
+- **The flat 10s teardown tax + force-exit banner on transaction-mode poolers (gbrain#2084).** Queries exit promptly; the banner now appears only when a teardown component genuinely violated its own bound.
+- **Slow operations are no longer killed mid-run with a false success.** The teardown deadline starts at teardown, never before the operation handler — a 30-second sync or a deep query runs to completion.
+- **Error exits on PGLite report exit 1, not 0.** Failed operations (e.g. `gbrain get <missing-page>`) now exit non-zero on every engine; the exit code reports the operation, not the cleanup.
+- **Piped output survives the exit.** Output is fenced and given a delivery window before the process exits, on every path including the backstop (the truncation class from gbrain#1959).
+- **`gbrain doctor` no longer leaks its connection pool when DB checks throw**, and `dream`, `doctor`, `ze-switch`, and the search dashboards all share the same bounded teardown (closing a long-standing drain gap on the overnight-cron path).
+- **Daemon safety with space-separated global flags.** `gbrain --timeout 30s serve` is recognized as the daemon it is — the exit gate resolves the command exactly the way dispatch does.
+
+### Added
+- **`GBRAIN_TEARDOWN_DEADLINE_MS`** — env override for the teardown backstop deadline (incident escape hatch; the default is computed from the drain and pool bounds).
+- **`GBRAIN_FLUSH_GRACE_MS`** — env override for the pre-exit output-delivery window (default 250ms on pipes, 0 on TTYs). Raise it when piping very large payloads into slow consumers; lower it for high-frequency scripted invocations that capture to files.
+
+### To take advantage of v0.42.42.0
+`gbrain upgrade`. No configuration needed. If your `gbrain query` has been printing results and then hanging ~10 seconds before a `force-exiting` banner, this release removes both the wait and the banner. If your scripts check gbrain exit codes on a PGLite brain, they will start seeing real failures — previously masked as exit 0 — so a wrapper that suddenly reports errors is the fix working, not a regression.
+
 ## [0.42.40.0] - 2026-06-09
 
 **`gbrain extract --stale` no longer aborts partway through a brain that contains emoji or other non-BMP characters.** On a large brain, link/timeline extraction could die with `invalid input syntax for type json` and commit nothing — and because the staleness bookmark only advances on a clean finish, every retry re-hit the same point and extraction stayed wedged. The cause: the link-context excerpt was sliced by raw UTF-16 index, so a window boundary landing inside an emoji's surrogate pair left an unpaired surrogate half in the text, which Postgres rejects when the batch is serialized to JSONB — taking down the whole batch, not just the one row. (PGLite is more permissive here, so this primarily bit the managed-Postgres engine.)
