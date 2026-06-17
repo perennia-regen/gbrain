@@ -371,6 +371,7 @@ describe('buildGazetteer — engine integration', () => {
       'organizacion',
       'entity',
       'establecimiento',
+      'atom',
     ]);
   });
 });
