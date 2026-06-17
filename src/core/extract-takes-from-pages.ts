@@ -15,7 +15,7 @@
 
 import type { BrainEngine } from './engine.ts';
 import type { TakeBatchInput, TakeKind } from './engine.ts';
-import { chat, isAvailable } from './ai/gateway.ts';
+import { chat, getChatModel, isAvailable } from './ai/gateway.ts';
 
 export const ALLOWED_PAGE_TYPES = [
   'concept', 'atom', 'lore', 'briefing', 'writing', 'originals',
@@ -114,7 +114,13 @@ export async function extractTakesFromPages(
     };
   }
 
-  if (!isAvailable('chat')) {
+  // Resolve the extraction model: explicit opts -> facts.extraction_model
+  // config -> the configured chat model. Use it for both the availability
+  // gate and the chat() call so extraction follows the configured provider.
+  const configuredExtractionModel = await engine.getConfig('facts.extraction_model');
+  const extractionModel = opts.model ?? configuredExtractionModel ?? getChatModel();
+
+  if (!isAvailable('chat', extractionModel)) {
     return {
       pages_scanned: 0,
       claims_extracted: 0,
@@ -174,7 +180,7 @@ export async function extractTakesFromPages(
     let response: { text: string };
     try {
       response = await chat({
-        model: opts.model ?? 'anthropic:claude-haiku-4-5',
+        model: extractionModel,
         system: CLASSIFIER_SYSTEM,
         messages: [
           {
