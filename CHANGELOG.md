@@ -2,6 +2,19 @@
 
 All notable changes to GBrain will be documented in this file.
 
+## [0.42.46.0] - 2026-06-17
+
+**`add_link` / `add_tag` (and their `remove_*` siblings) now honor the same per-call `source` parameter `put_page` accepts (v118 federated_write).** On a multi-source brain a federated_write client could `put_page` into a non-default sala (e.g. a `directorio`-default token writing into `campo`), but every follow-up `add_link` and `add_tag` failed with `addLink failed: page "X" (source=directorio) or "Y" (source=directorio) not found` because the v0.31.8 D7 thread-the-default wave only plumbed `ctx.sourceId` and never exposed a per-call override. The fix mirrors `put_page` exactly: an optional `source` parameter, authorized through `resolveWriteSource` against `{ctx.sourceId} ∪ ctx.auth.federatedWrite`, applied to both endpoints + origin for links and to the slug lookup for tags. Omitted `source` keeps the pre-fix behavior (writes to the client's default), so single-source brains and existing callers are unaffected.
+
+### Itemized changes
+- **`add_link.source`, `remove_link.source`** — target sala/source for both endpoints. Same authorization gate as `put_page.source`. Cross-source links (from in A, to in B) remain out of scope; use the engine API directly for that edge case.
+- **`add_tag.source`, `remove_tag.source`** — target sala/source for the slug lookup.
+- **`resolveWriteSource` runs before the dry-run short-circuit** in all four ops, so a `--dry-run` preview surfaces `permission_denied` for an out-of-grant source instead of returning success and failing the live call. The dry-run envelope now echoes the resolved `source`, mirroring `put_page`'s preview shape.
+- **Tests** — `test/add-link-tag-federated-write.test.ts`: 16 cases covering the (a) omitted → ctx.sourceId, (b) in-set → admitted, (c) out-of-set → permission_denied matrix for all four ops, plus a workflow reproducer for the exact Perennia failure (directorio-default client linking pages that live in `campo`).
+
+### To take advantage of v0.42.46.0
+`gbrain upgrade`. No migration needed — the new parameter is additive on the wire. Federated_write OAuth clients (created with `gbrain auth create --federated-write campo,lideres`) can now pass `source: "campo"` to `add_link` / `add_tag` / `remove_link` / `remove_tag` and have the lookup resolve against that sala instead of the client's default. Single-source brains see no behavior change.
+
 ## [0.42.45.0] - 2026-06-13
 
 **The daily sync cron stops wedging on cost, and the embedding-spend estimate finally matches what a sync actually does (gbrain#2139).** On an active brain the inline-embed cost gate priced the *entire* corpus every time the working tree was dirty — which is always, since agents and crons write to it constantly — so a routine daily sync estimated ~158M tokens / ~$8 when the real delta was a few hundred files / ~$0.04, then blocked the cron with a confirmation it could never answer. Embeds silently stalled until someone noticed. The estimate now mirrors execution: it fetches first and prices only the files this run will pull and import, through the same diff machinery the sync itself uses. A brain whose commits are caught up but whose tree is dirty estimates $0, because an attached-HEAD sync imports only the committed diff.
