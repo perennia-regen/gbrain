@@ -11,6 +11,7 @@ import type { GBrainConfig } from './config.ts';
 import type { PageType } from './types.ts';
 import { importFromContent } from './import-file.ts';
 import { writePageThrough } from './write-through.ts';
+import { writeTimelineFromContradictions } from './eval-contradictions/timeline-writer.ts';
 import { hybridSearch, hybridSearchCached, stampContentFlags } from './search/hybrid.ts';
 import { expandQuery } from './search/expansion.ts';
 import { dedupResults } from './search/dedup.ts';
@@ -37,6 +38,7 @@ import {
   QUERY_DESCRIPTION,
   SEARCH_DESCRIPTION,
   FIND_CONTRADICTIONS_DESCRIPTION,
+  APPLY_TIMELINE_FROM_CONTRADICTIONS_DESCRIPTION,
   FIND_TRAJECTORY_DESCRIPTION,
   CODE_CALLERS_DESCRIPTION,
   CODE_CALLEES_DESCRIPTION,
@@ -3560,6 +3562,39 @@ const find_contradictions: Operation = {
   cliHints: { name: 'find-contradictions' },
 };
 
+const apply_timeline_from_contradictions: Operation = {
+  name: 'apply_timeline_from_contradictions',
+  description: APPLY_TIMELINE_FROM_CONTRADICTIONS_DESCRIPTION,
+  scope: 'write',
+  mutating: true,
+  // Writes derived timeline rows from the already-persisted probe run. Reads
+  // eval_contradictions_runs.report_json (same source as find_contradictions),
+  // keeps temporal_evolution / temporal_supersession findings, and inserts one
+  // idempotent timeline entry per finding on the later-dated page. The
+  // (page_id, date, summary, source) dedup key + ON CONFLICT DO NOTHING make
+  // re-runs no-ops. No new probe is triggered.
+  params: {
+    days: {
+      type: 'number',
+      description: 'Look back N days for the latest probe run. Default 30.',
+    },
+    dry_run: {
+      type: 'boolean',
+      description: 'Build entries and report counts without writing.',
+    },
+  },
+  handler: async (ctx, p) => {
+    const days = typeof p.days === 'number' && p.days > 0 ? Math.floor(p.days) : undefined;
+    const result = await writeTimelineFromContradictions(ctx.engine, {
+      ...(ctx.sourceId ? { sourceId: ctx.sourceId } : {}),
+      ...(days !== undefined ? { days } : {}),
+      dryRun: !!ctx.dryRun,
+    });
+    return result;
+  },
+  cliHints: { name: 'timeline-apply' },
+};
+
 const find_trajectory: Operation = {
   name: 'find_trajectory',
   description: FIND_TRAJECTORY_DESCRIPTION,
@@ -5135,6 +5170,9 @@ export const operations: Operation[] = [
   extract_facts, recall, forget_fact,
   // v0.32.6: contradiction probe MCP surface (M3)
   find_contradictions,
+  // contradiction-probe timeline writer — materializes temporal findings
+  // as idempotent timeline entries (CLI: `gbrain timeline-apply`).
+  apply_timeline_from_contradictions,
   // v0.33: expertise + relationship-proximity routing
   find_experts,
   // v0.35.4: temporal trajectory (typed claims over time + regression detection)

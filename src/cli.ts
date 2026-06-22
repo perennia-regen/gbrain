@@ -927,6 +927,26 @@ export function formatResult(opName: string, result: unknown): string {
         `#${v.id}  ${v.snapshot_at?.toString().slice(0, 19) || '?'}  ${v.compiled_truth?.slice(0, 60) || ''}...`,
       ).join('\n') + '\n';
     }
+    case 'apply_timeline_from_contradictions': {
+      const r = result as any;
+      if (r?.no_run) {
+        return 'No contradiction probe runs found. Run `gbrain eval suspected-contradictions` first.\n';
+      }
+      const planned = r?.dry_run ? (r?.entries?.length ?? 0) : (r?.created ?? 0);
+      const lines = [
+        `Probe run: ${r?.run_id} (${r?.ran_at})`,
+        `Temporal findings considered: ${r?.considered ?? 0} ` +
+          `(skipped ${r?.skipped_no_date ?? 0} no-date, ${r?.skipped_no_slug ?? 0} no-slug)`,
+        `${r?.dry_run ? 'Would write' : 'Wrote'} ${planned} timeline entr${planned === 1 ? 'y' : 'ies'}.`,
+      ];
+      if (!r?.dry_run && (r?.created ?? 0) < (r?.entries?.length ?? 0)) {
+        lines.push(
+          `  (${(r.entries.length - r.created)} already present or page not found for source — ` +
+          `idempotent dedup on (page_id, date, summary, source))`,
+        );
+      }
+      return lines.join('\n') + '\n';
+    }
     default:
       return JSON.stringify(result, null, 2) + '\n';
   }
