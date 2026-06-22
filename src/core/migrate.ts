@@ -112,6 +112,76 @@ export class MigrationRetryExhausted extends Error {
 // Add new migrations at the end. Never modify existing ones.
 // Exported for tests that structurally assert migration contents (e.g., "v9 must
 // pre-create idx_timeline_dedup_helper before the DELETE..."). Read-only contract.
+//
+// ── Fork-local migration band (perennia) ───────────────────────────────────
+// This is a FORK of garrytan/gbrain. Upstream keeps appending migrations at the
+// next integer (118, 119, 120, ...). If the fork also appended at the next
+// integer, both repos would mint the SAME version number with DIFFERENT SQL on
+// every parallel release — and because the runner is a high-water-mark
+// (`pending = m.version > current`), the loser's migration gets SKIPPED SILENTLY
+// on brains that already passed that number. That already happened once (the
+// fork's federated_write grabbed 118/119 and dropped upstream's
+// page_generation_clock_sequence_swap + op_checkpoints_completed_keys_array_check).
+//
+// Convention going forward: upstream owns the contiguous low range (1..N) and
+// fork-local migrations live in a reserved high band starting at
+// FORK_MIGRATION_BASE. Upstream's counter will never reach it, so the shared
+// low range stays byte-identical to upstream and merges never conflict there.
+// Band order is NOT chronological — every fork-band migration is idempotent and
+// order-independent, so new ones just append within the band.
+const FORK_MIGRATION_BASE = 9000;
+
+// Upstream v118/v119 SQL, kept verbatim so the low range matches garrytan and so
+// the fork-band catch-up migration (FORK_MIGRATION_BASE + 3) can re-apply the
+// exact same DDL to heal brains that recorded version 119 while running the
+// fork's old federated_write migrations instead of these.
+const PAGE_GENERATION_CLOCK_SEQUENCE_SWAP_SQL = `
+      CREATE SEQUENCE IF NOT EXISTS page_generation_clock_seq;
+
+      SELECT setval('page_generation_clock_seq', GREATEST(
+        1,
+        COALESCE((SELECT last_value FROM page_generation_clock_seq), 0),
+        COALESCE((SELECT value FROM page_generation_clock WHERE id = 1), 0),
+        COALESCE((SELECT MAX(generation) FROM pages), 0)
+      ));
+
+      CREATE OR REPLACE FUNCTION bump_page_generation_clock_fn() RETURNS trigger AS $func$
+      BEGIN
+        PERFORM nextval('page_generation_clock_seq');
+        RETURN NULL;
+      END;
+      $func$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS bump_page_generation_clock_trg ON pages;
+      CREATE TRIGGER bump_page_generation_clock_trg
+        AFTER INSERT OR UPDATE OR DELETE ON pages
+        FOR EACH STATEMENT
+        EXECUTE FUNCTION bump_page_generation_clock_fn();
+
+      DELETE FROM query_cache;
+    `;
+
+const OP_CHECKPOINTS_ARRAY_CHECK_SQL = `
+      LOCK TABLE op_checkpoints IN SHARE ROW EXCLUSIVE MODE;
+
+      UPDATE op_checkpoints
+         SET completed_keys = '[]'::jsonb, updated_at = now()
+       WHERE jsonb_typeof(completed_keys) <> 'array';
+
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+           WHERE conname = 'op_checkpoints_completed_keys_array'
+             AND conrelid = 'op_checkpoints'::regclass
+        ) THEN
+          ALTER TABLE op_checkpoints
+            ADD CONSTRAINT op_checkpoints_completed_keys_array
+            CHECK (jsonb_typeof(completed_keys) = 'array');
+        END IF;
+      END $$;
+    `;
+
 export const MIGRATIONS: Migration[] = [
   // Version 1 is the baseline (schema.sql creates everything with IF NOT EXISTS).
   {
@@ -5270,10 +5340,42 @@ export const MIGRATIONS: Migration[] = [
         ON context_volunteer_events (source_id, slug);
     `,
   },
+  // v118/v119 are UPSTREAM (garrytan) migrations, restored verbatim so the
+  // shared low range stays byte-identical to upstream. The fork had previously
+  // overwritten 118/119 with its own federated_write migrations; those moved to
+  // the fork band below (FORK_MIGRATION_BASE + 0/1), and the catch-up at
+  // FORK_MIGRATION_BASE + 3 re-applies these two for brains that already passed
+  // version 119 under the old (federated_write) numbering. See the fork-band
+  // banner above MIGRATIONS for the full rationale.
   {
     version: 118,
+    name: 'page_generation_clock_sequence_swap',
+    // v0.42.x — contention-free page-generation clock. The v107 single-row
+    // `UPDATE page_generation_clock SET value = value + 1 WHERE id = 1` took a
+    // transaction-length RowExclusiveLock on one tuple, serializing every
+    // concurrent page writer on the prior writer's COMMIT. Swap to a SEQUENCE:
+    // nextval() takes a microsecond LWLock, never a row lock. The Layer-1 cache
+    // bookmark reads `last_value` instead of the row. Idempotent: CREATE
+    // SEQUENCE IF NOT EXISTS + CREATE OR REPLACE + DROP TRIGGER IF EXISTS.
+    idempotent: true,
+    sql: PAGE_GENERATION_CLOCK_SEQUENCE_SWAP_SQL,
+  },
+  {
+    version: 119,
+    name: 'op_checkpoints_completed_keys_array_check',
+    // v0.42.x — make the op_checkpoints scalar-corruption class structurally
+    // impossible. completed_keys is JSONB and the loader runs
+    // jsonb_array_elements_text(completed_keys); a non-array (scalar) value makes
+    // that throw and loses all checkpoint progress for that key. The CHECK is a
+    // DB-enforced, always-on guard. Idempotent: LOCK + repair + guarded ADD
+    // CONSTRAINT (pg_constraint existence check).
+    idempotent: true,
+    sql: OP_CHECKPOINTS_ARRAY_CHECK_SQL,
+  },
+  {
+    version: FORK_MIGRATION_BASE + 0, // 9000
     name: 'oauth_clients_federated_write_column',
-    // federated_write is the WRITE-side mirror of federated_read (#876).
+    // [fork] federated_write is the WRITE-side mirror of federated_read (#876).
     // source_id (v60) is the single write-AUTHORITY axis; federated_read (v61)
     // is the read-SCOPE array. federated_write is the write-SCOPE array: the
     // set of sources a token may write to. Write ops choose a target source per
@@ -5282,29 +5384,76 @@ export const MIGRATIONS: Migration[] = [
     // source_id='directorio' while also writing to ['campo', 'lideres'].
     //
     // Default '{}' (empty array) — UNLIKE federated_read, there is NO backfill.
-    // Empty means "writes are locked to source_id" (the pre-v118 behavior),
-    // which is exactly the safe default for every existing client. A client only
-    // gains multi-source write by an operator explicitly setting the column
-    // (via `--federated-write` at registration). Keep in sync with
-    // src/schema.sql, src/core/pglite-schema.ts, src/core/schema-embedded.ts.
+    // Empty means "writes are locked to source_id", the safe default for every
+    // existing client. Keep in sync with src/schema.sql,
+    // src/core/pglite-schema.ts, src/core/schema-embedded.ts.
+    //
+    // MOVED from the old fork-118 to the fork band. ADD COLUMN IF NOT EXISTS is
+    // a no-op on brains that already ran it under the old number.
     idempotent: true,
     sql: `
       ALTER TABLE oauth_clients ADD COLUMN IF NOT EXISTS federated_write TEXT[] NOT NULL DEFAULT '{}';
     `,
   },
   {
-    version: 119,
+    version: FORK_MIGRATION_BASE + 1, // 9001
     name: 'oauth_clients_federated_write_gin_index',
-    // GIN index for array-containment lookups, mirroring v65's
-    // idx_oauth_clients_federated_read. Write authorization checks the set in
-    // application code (resolveWriteSource), but the index keeps operator
-    // queries (`WHERE 'campo' = ANY(federated_write)`) and any future
-    // DB-side scoping cheap.
+    // [fork] GIN index for array-containment lookups, mirroring v65's
+    // idx_oauth_clients_federated_read. MOVED from the old fork-119 to the fork
+    // band. CREATE INDEX IF NOT EXISTS is a no-op on brains that already ran it.
     idempotent: true,
     sql: `
       CREATE INDEX IF NOT EXISTS idx_oauth_clients_federated_write
         ON oauth_clients USING GIN (federated_write);
     `,
+  },
+  {
+    version: FORK_MIGRATION_BASE + 2, // 9002
+    name: 'write_attribution_columns',
+    // [fork] Author attribution: records WHO wrote each page / ingest event. The
+    // value is the server-resolved OAuth identity (oauth_clients.client_id +
+    // client_name, surfaced via AuthInfo at token-verification time), threaded
+    // from OperationContext.auth in the put_page / log_ingest op handlers —
+    // NOT a client-supplied param, so it can't be spoofed.
+    //
+    //   - last_write_client_id   TEXT — oauth_clients.client_id of the writer
+    //   - last_write_client_name TEXT — human-readable agent name
+    //
+    // Both nullable: local/trusted CLI writes, sync, and migrations carry no
+    // auth identity, so they land NULL. On pages the engine's putPage UPDATE is
+    // COALESCE-preserve, so a later identity-less write (background sync re-
+    // serializing a page) does NOT erase the prior author — the column tracks
+    // the last writer that carried an identity, which is the signal a per-user
+    // ingestion digest needs. ingest_log is append-only, so each row simply
+    // records the writer at insert time (or NULL).
+    //
+    // ADD COLUMN with NULL default is metadata-only on Postgres 11+ and
+    // PGLite 17.5 — instant on tables of any size. No index: attribution
+    // queries are admin/digest-surface only. Not referenced by any SCHEMA_SQL
+    // index/FK, so no forward-reference bootstrap is required (mirrors the v81
+    // provenance columns, which are likewise migration-only).
+    idempotent: true,
+    sql: `
+      ALTER TABLE pages ADD COLUMN IF NOT EXISTS last_write_client_id TEXT NULL;
+      ALTER TABLE pages ADD COLUMN IF NOT EXISTS last_write_client_name TEXT NULL;
+      ALTER TABLE ingest_log ADD COLUMN IF NOT EXISTS last_write_client_id TEXT NULL;
+      ALTER TABLE ingest_log ADD COLUMN IF NOT EXISTS last_write_client_name TEXT NULL;
+    `,
+  },
+  {
+    version: FORK_MIGRATION_BASE + 3, // 9003
+    name: 'reconcile_forked_118_119',
+    // [fork] Heal brains that recorded version 119 while running the fork's OLD
+    // federated_write migrations (the 118/119 collision), so they never received
+    // upstream's page_generation_clock_sequence_swap (v118) or
+    // op_checkpoints_completed_keys_array_check (v119). Those two now live at the
+    // upstream numbers above, but a brain already at bookmark 119 computes
+    // `pending = version > 119` and would skip them forever. This catch-up sits
+    // in the fork band (> 119) so it IS pending for such brains, and re-applies
+    // the exact same DDL. Both bodies are idempotent, so on a fresh install
+    // (where 118/119 ran normally) this is a harmless no-op.
+    idempotent: true,
+    sql: PAGE_GENERATION_CLOCK_SEQUENCE_SWAP_SQL + '\n' + OP_CHECKPOINTS_ARRAY_CHECK_SQL,
   },
 ];
 
