@@ -3339,6 +3339,29 @@ export class PGLiteEngine implements BrainEngine {
     return result.length;
   }
 
+  async applyTimelineBaseline(opts?: { sourceId?: string }): Promise<{ created: number }> {
+    // One creation-date "Page created" row per entity page that has no timeline
+    // yet. Date = earliest known instant (first page_version snapshot, else the
+    // page's created_at). Idempotent: the (page_id, date, summary, source) dedup
+    // index plus the NOT EXISTS guard make re-runs no-ops. Source-scoped when a
+    // sourceId is given, brain-wide otherwise.
+    const sourceId = opts?.sourceId ?? null;
+    const { rows } = await this.db.query(
+      `INSERT INTO timeline_entries (page_id, date, source, summary, detail) -- gbrain-allow-direct-insert: entity creation-date baseline, idempotent via (page_id,date,summary,source) + NOT EXISTS
+       SELECT p.id,
+              COALESCE((SELECT MIN(v.snapshot_at) FROM page_versions v WHERE v.page_id = p.id), p.created_at)::date,
+              'baseline', 'Page created', ''
+       FROM pages p
+       WHERE p.type IN ('person', 'company')
+         AND ($1::text IS NULL OR p.source_id = $1)
+         AND NOT EXISTS (SELECT 1 FROM timeline_entries te WHERE te.page_id = p.id)
+       ON CONFLICT (page_id, date, summary, source) DO NOTHING
+       RETURNING page_id`,
+      [sourceId]
+    );
+    return { created: rows.length };
+  }
+
   async getTimeline(slug: string, opts?: TimelineOpts): Promise<TimelineEntry[]> {
     // v0.31.8 (D16) + #2200: build WHERE clause dynamically so the source scope
     // composes cleanly with the after/before filters. Precedence: federated
