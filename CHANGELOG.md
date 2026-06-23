@@ -2,6 +2,23 @@
 
 All notable changes to GBrain will be documented in this file.
 
+## [0.42.47.0] - 2026-06-22
+
+**`timeline_coverage` finally tells the truth, and you can actually move it** (perennia production branch). Backport of the master-line timeline-coverage work onto the fork's production branch that the brains run.
+
+A well-maintained brain could show 92% timeline coverage and still score 1 out of 15 on the brain-score timeline component, because the score divided "pages with any timeline" by "every page in the brain" while the displayed coverage is entity-scoped (person/company). Thousands of leaf docs that never get a timeline by design dragged the score toward zero, lower the more the brain grew. The score now derives from the entity-scoped coverage it shows, in both engines.
+
+The second half: the contradiction-probe timeline writer only emits entries for pages with a detectable temporal contradiction, so coverage plateaued with no way up. `apply_timeline_baseline` is an opt-in, idempotent pass that gives every entity page without a timeline one creation-date "Page created" entry, dated at the page's earliest known instant and sourced `baseline`.
+
+### Fixed
+- `getHealth().timeline_coverage_score` derives from the entity-scoped `timeline_coverage` it displays instead of a whole-brain `pages_with_timeline / page_count` density (pglite + postgres, lockstep). Drops the now-unused `pages_with_timeline` query column. Regression test included.
+
+### Added
+- `apply_timeline_baseline` op (scope `write`, local-only) + `Engine.applyTimelineBaseline(opts?)` in both engines: backfills a creation-date baseline timeline entry for every entity page (person/company) with no timeline, idempotent via the `(page_id, date, summary, source)` dedup index plus a `NOT EXISTS` guard, source-scoped when a `sourceId` is given.
+
+### To take advantage of v0.42.47.0
+Brains tracking this branch pick it up on the next `gbrain upgrade`. Brain scores recompute on the next `get_health` / `gbrain doctor` with no action needed. To lift coverage further, run `gbrain timeline-baseline` after a sync; it is idempotent and safe to schedule.
+
 ## [0.42.46.0] - 2026-06-17
 
 **`add_link` / `add_tag` (and their `remove_*` siblings) now honor the same per-call `source` parameter `put_page` accepts (v118 federated_write).** On a multi-source brain a federated_write client could `put_page` into a non-default sala (e.g. a `directorio`-default token writing into `campo`), but every follow-up `add_link` and `add_tag` failed with `addLink failed: page "X" (source=directorio) or "Y" (source=directorio) not found` because the v0.31.8 D7 thread-the-default wave only plumbed `ctx.sourceId` and never exposed a per-call override. The fix mirrors `put_page` exactly: an optional `source` parameter, authorized through `resolveWriteSource` against `{ctx.sourceId} ∪ ctx.auth.federatedWrite`, applied to both endpoints + origin for links and to the slug lookup for tags. Omitted `source` keeps the pre-fix behavior (writes to the client's default), so single-source brains and existing callers are unaffected.
